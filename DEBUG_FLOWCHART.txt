@@ -1,0 +1,229 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                 DEBUGGING FLOWCHART - TWO SPECIFIC BUGS                    ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+EMAIL SYNC DATA FLOW WITH DEBUG POINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Gmail API
+  ↓ (50-100 emails fetched)
+  ├─ [DEBUG 0: Fetched count]
+  ↓
+Email Parser (AI first, regex fallback)
+  ├─ [DEBUG 1: v0-AI-PARSER-RAW] — Raw Claude output
+  │  └─ Shows: company_raw, status_raw BEFORE processing
+  │  └─ Bug 2 clue: If garbage company here → Claude at fault
+  │
+  ├─ [DEBUG 2: v0-AI-PARSER-FINAL] — After processing
+  │  └─ Shows: company, eventType AFTER fallback applied
+  │  └─ Bug 2 clue: If still garbage → Fallback didn't help
+  │
+  ├─ [DEBUG 3: v0-REGEX-FALLBACK] — When regex used
+  │  └─ Shows: company, eventType from regex
+  │  └─ Bug 2 clue: If present with garbage → Regex is culprit
+  │
+  ↓ (20-30 parsed emails)
+Parsed Emails List
+  ├─ [gmail_id, company, eventType, timestamp, role, ...]
+  ↓
+Application Resolver (Group by company|role)
+  ├─ [DEBUG 4: v0-STAGE-DEBUG] — All events for app
+  │  └─ Shows: event_types array ["applied", "interview", "offer"]
+  │  └─ Bug 1 clue: If all "applied" → Events not diverse
+  │
+  ├─ [DEBUG 5: v0-STAGE-ASSIGNED] — Final stage
+  │  └─ Shows: last_event_type → final_status mapping
+  │  └─ Bug 1 clue: If offer→applied → statusMap wrong
+  │
+  ↓ (10-15 applications)
+Database
+  ↓
+Dashboard (52 applications shown)
+  └─ BUG: All "Applied", garbage company names
+
+
+HOW TO DIAGNOSE EACH BUG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BUG 1: ALL APPLICATIONS STUCK AT "APPLIED"
+─────────────────────────────────────────────────────────────────────────────
+
+Step 1: Check [v0-STAGE-DEBUG] logs
+        What are the event_types for each application?
+
+        CASE A: event_types: ["applied", "applied", "applied"]
+                └─ Events are homogeneous (all applied)
+                └─ ROOT CAUSE: AI parser classifying everything as "applied"
+                └─ FIX NEEDED: Rewrite AI prompt for better signal detection
+                └─ Check: [v0-AI-PARSER-RAW] — is status_raw always "applied"?
+
+        CASE B: event_types: ["applied", "interview", "offer"]
+                └─ Events are diverse
+                └─ Go to Step 2
+
+Step 2: Check [v0-STAGE-ASSIGNED] logs
+        Is final_status matching last_event_type?
+
+        CASE B1: last_event_type: "offer", final_status: "offer" ✓
+                 └─ Everything working correctly
+                 └─ BUG might be cache or display issue
+
+        CASE B2: last_event_type: "offer", final_status: "applied" ✗
+                 └─ statusMap not mapping correctly
+                 └─ ROOT CAUSE: application-resolver.ts line ~113
+                 └─ FIX NEEDED: Check statusMap dictionary
+
+
+BUG 2: GARBAGE COMPANY NAMES
+─────────────────────────────────────────────────────────────────────────────
+
+Step 1: Check for [v0-REGEX-FALLBACK] logs
+        Does regex fallback appear?
+
+        CASE A: Yes, regex fallback appears
+                └─ Check: [v0-REGEX-FALLBACK] company value
+                
+                CASE A1: company: "reviewing the American Express"
+                         └─ ROOT CAUSE: Regex extracting fragments
+                         └─ FIX NEEDED: Add validation to reject fragments
+                         └─ Location: lib/gmail.ts extractCompany() line ~641
+
+        CASE B: No regex fallback (only AI parser)
+                └─ Check: [v0-AI-PARSER-RAW] company_raw value
+                
+                CASE B1: company_raw: "reviewing the American Express"
+                         └─ ROOT CAUSE: Claude returning fragments
+                         └─ FIX NEEDED: Clarify AI prompt
+                         └─ Location: lib/email-parser.ts prompt line ~13
+
+                CASE B2: company_raw: null
+                         └─ Company extraction failed
+                         └─ But final shows "Unknown Company"
+                         └─ This is OK (fallback working)
+
+
+EXACT STEPS TO CAPTURE LOGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Start dev server:     pnpm dev
+2. Open browser:         localhost:3000
+3. Press F12:            DevTools → Console tab
+4. Click "Sync Gmail":   Trigger sync
+5. Watch console:        Look for [v0-* logs
+6. Filter console:       Type [v0- in filter box
+7. Copy 10-15 logs:      Right-click → Copy
+8. Send to me:           Paste into chat
+
+
+WHAT EACH DEBUG LOG MEANS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[v0-AI-PARSER-RAW]
+  ├─ subject: Email subject (first 80 chars)
+  ├─ is_job_related: true/false (is this recruitment email?)
+  ├─ company_raw: What Claude extracted
+  ├─ status_raw: What Claude classified (applied/interview/offer/rejected/etc)
+  └─ confidence scores and reasoning
+
+[v0-AI-PARSER-FINAL]
+  ├─ subject: Email subject
+  ├─ company: Final company (after "Unknown" fallback)
+  ├─ eventType: Final status (after mapping)
+  └─ role: Job title (if found)
+
+[v0-REGEX-FALLBACK]
+  ├─ subject: Email subject
+  ├─ from: Sender email
+  ├─ company: Regex-extracted company
+  ├─ eventType: Regex-classified status
+  └─ Shows: When regex is used instead of AI
+
+[v0-STAGE-DEBUG]
+  ├─ company: Company name
+  ├─ role: Job title
+  ├─ total_emails: How many emails for this company
+  ├─ event_types: Array of all eventTypes (["applied", "interview", ...])
+  └─ last_event_type: Most recent email's type
+
+[v0-STAGE-ASSIGNED]
+  ├─ company: Company name
+  ├─ last_email_eventType: Type of last email
+  ├─ final_status: Resulting application status
+  └─ mapped_correctly: Boolean showing if mapping worked
+
+
+DIAGNOSTIC DECISION TREE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    Dashboard shows 52 apps
+           |
+        [v0-STAGE-DEBUG] all event_types?
+           |
+      ┌────┴────┐
+      |         |
+    All      Diverse
+   Applied   Events
+      |         |
+     BUG1     [v0-STAGE-ASSIGNED]
+     ROOT      final_status?
+     CAUSE:       |
+     AI       ┌───┴────┐
+     (line     |        |
+      ~13)  Correct  Wrong
+            ✓         BUG1
+                      ROOT
+                      CAUSE:
+                      statusMap
+                      (line ~113)
+
+
+    Any [v0-REGEX-FALLBACK]?
+           |
+      ┌────┴────┐
+      |         |
+     Yes       No
+      |         |
+     Check    [v0-AI-PARSER-RAW]
+     regex     company_raw?
+     company     |
+      |      ┌───┴────┐
+      |      |        |
+    Garbage Clean  Garbage
+      |      |        |
+    BUG2   OK     BUG2
+    ROOT        ROOT
+    CAUSE:       CAUSE:
+    Regex        AI
+    (line        (line
+     ~641)       ~13)
+
+
+AFTER I SEE YOUR LOGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+I will:
+1. Read your 10-15 logs
+2. Follow decision tree
+3. Identify root cause (1 minute)
+4. Write targeted fix (5 minutes)
+5. Remove debug logs (1 minute)
+6. Test fix (2 minutes)
+
+Total: 10 minutes from logs to working fix
+
+
+FILES WITH DEBUG CODE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+lib/email-parser.ts        line ~181    [v0-AI-PARSER-RAW]
+lib/email-parser.ts        line ~215    [v0-AI-PARSER-FINAL]
+lib/gmail.ts               line ~792    [v0-REGEX-FALLBACK]
+lib/application-resolver.ts line ~93    [v0-STAGE-DEBUG]
+lib/application-resolver.ts line ~114   [v0-STAGE-ASSIGNED]
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+READY TO CAPTURE LOGS? 
+
+Follow the steps above and send logs. This debug setup will pinpoint 
+the exact root cause within minutes.

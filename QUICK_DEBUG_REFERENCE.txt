@@ -1,0 +1,189 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                      DEBUG LOGS - QUICK REFERENCE                          ║
+║                                                                            ║
+║  Two bugs to debug:                                                       ║
+║  1. All 52 apps stuck at "Applied" (Interview=0, Offer=0, Rejected=0)    ║
+║  2. Company names corrupted ("reviewing the American Express")            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STEP 1: TRIGGER SYNC AND OPEN CONSOLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Open app in browser
+2. Press F12 (or Cmd+Option+J on Mac) → Console tab
+3. Click "Sync Gmail" button
+4. Watch logs scroll in console
+5. Filter for "[v0-" to see only our debug logs
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LOG PATTERN REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[v0-AI-PARSER-RAW]
+├─ Shows: What Claude extracted BEFORE processing
+├─ company_raw: The raw company value Claude returned
+├─ status_raw: The raw status Claude classified
+└─ Look for: Garbage in company_raw or always "applied" in status_raw
+
+[v0-AI-PARSER-FINAL]
+├─ Shows: What AI parser returns AFTER processing
+├─ company: Final company (after "Unknown Company" fallback)
+├─ eventType: Final status (after mapping)
+└─ Look for: Matches raw if AI was good, differs if fallback kicked in
+
+[v0-REGEX-FALLBACK]
+├─ Shows: When regex is used instead of AI
+├─ company: Regex-extracted company
+├─ eventType: Regex-classified status
+└─ Look for: If present = AI failed; if garbage = regex is culprit
+
+[v0-STAGE-DEBUG]
+├─ Shows: All events grouped for one application
+├─ event_types: ["applied", "interview", "offer", ...] (all for company)
+├─ last_event_type: Most recent email status
+└─ Look for: If all "applied" = AI classified everything as applied
+
+[v0-STAGE-ASSIGNED]
+├─ Shows: Final stage calculated
+├─ last_event_type: Last email's eventType
+├─ final_status: Resulting stage ("applied", "interview", "offer", etc)
+└─ Look for: If mismatch (e.g., last="offer" but final="applied") = mapping bug
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DIAGNOSTIC FLOWCHART
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BUG 1: ALL APPLICATIONS STUCK AT "APPLIED"
+
+Question: What does [v0-STAGE-DEBUG] event_types show?
+
+  A) All "applied": ["applied", "applied", "applied", ...]
+     → ROOT CAUSE: AI Parser (Claude) classifying everything as applied
+     → FIX NEEDED: Rewrite AI prompt to detect offer/rejection/interview signals
+     
+  B) Mixed: ["applied", "interview", "offer"]
+     → Next: What does [v0-STAGE-ASSIGNED] show?
+     
+     B1) final_status: "offer" (correct)
+         → BUG RESOLVED (might be cache issue)
+         
+     B2) final_status: "applied" (wrong)
+         → ROOT CAUSE: statusMap not mapping last_event_type correctly
+         → FIX NEEDED: Check statusMap in application-resolver.ts
+
+
+BUG 2: GARBAGE COMPANY NAMES ("reviewing the American Express")
+
+Question: What does [v0-REGEX-FALLBACK] show?
+
+  A) Multiple [v0-REGEX-FALLBACK] logs with garbage company
+     → ROOT CAUSE: Regex fallback extracting sentence fragments
+     → FIX NEEDED: Add validation to reject non-entity text
+     
+  B) No [v0-REGEX-FALLBACK] logs (only [v0-AI-PARSER-FINAL])
+     → ROOT CAUSE: AI (Claude) returning garbage company_raw
+     → FIX NEEDED: Rewrite AI prompt to clarify what's a company
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SPECIFIC EXAMPLES TO FIND IN LOGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+From your dashboard, search for these subjects/companies:
+
+1. "reviewing the American Express"
+   Search logs for: subject containing "American" or "Express"
+   Look for: [v0-REGEX-FALLBACK] or [v0-AI-PARSER-RAW] with garbage
+
+2. "your interest for the"
+   Search logs for: companies starting with "your" or "the"
+   Look for: Should be null or Unknown, not a sentence fragment
+
+3. "NeST Digital Recruit" + fragment
+   Search logs for: subject containing "NeST"
+   Look for: Does it show full sentence or clean company name?
+
+4. "Software Engineer I - 26007841"
+   Search logs for: "Software Engineer" or "26007841"
+   Look for: eventType and status_confidence (should be low if it's a role)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT TO COPY-PASTE TO ME
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+After capturing logs:
+
+1. Copy 10 [v0-STAGE-DEBUG] logs (showing all event_types)
+   → Shows if all emails are classified as "applied"
+
+2. Copy all [v0-REGEX-FALLBACK] logs (if any)
+   → Shows if regex is breaking company names
+
+3. Copy 5 [v0-AI-PARSER-RAW] logs for the broken companies
+   → Shows if Claude is returning garbage
+
+4. Screenshot of dashboard showing 4 broken applications
+   → Shows which ones need fixing
+
+Example format:
+─────────────────────────────────────────────────────
+[v0-AI-PARSER-RAW] {
+  subject: "Update on Your Application at Acowale",
+  company_raw: "Acowale",
+  status_raw: "applied",
+  status_confidence: 0.8
+}
+
+[v0-STAGE-DEBUG] {
+  company: "Acowale",
+  event_types: ["applied", "applied", "applied"],
+  last_event_type: "applied"
+}
+
+[v0-STAGE-ASSIGNED] {
+  company: "Acowale",
+  last_email_eventType: "applied",
+  final_status: "applied"
+}
+─────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+KEY INSIGHTS FROM LOGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+AI PARSER HEALTH:
+- If company_raw matches subject text clearly → AI working
+- If company_raw is null for obvious companies → AI extraction broken
+- If status_raw is always "applied" → AI classification broken
+
+REGEX FALLBACK HEALTH:
+- If [v0-REGEX-FALLBACK] appears frequently → AI failing too often
+- If regex company matches AI → both agree
+- If regex company is garbage → regex extraction is broken
+
+STAGE ASSIGNMENT HEALTH:
+- If event_types has "interview"/"offer" but final_status="applied" → mapping broken
+- If final_status always "applied" → statusMap issue
+- If final_status matches last_event_type correctly → mapping working
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MOST LIKELY ROOT CAUSES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Bug 1 (Stuck at Applied):
+  80% chance: AI prompt not detecting "offer"/"rejection"/"interview" signals
+  15% chance: statusMap mapping is broken
+  5% chance: Events not being grouped correctly
+
+Bug 2 (Garbage Company):
+  70% chance: Regex fallback extracting sentence fragments without validation
+  25% chance: AI prompt returning non-entity text as company
+  5% chance: Database storing wrong field
+
+After logs, I can identify exact root cause within minutes.

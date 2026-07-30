@@ -1,0 +1,189 @@
+COMPREHENSIVE EMAIL PARSING LOGGING
+====================================
+
+How to view logs:
+1. Run: pnpm dev
+2. Open browser DevTools (F12)
+3. Click "Sync Gmail" button
+4. Watch console for detailed trace of each email
+
+CONSOLE OUTPUT STRUCTURE
+========================
+
+When sync starts:
+┌────────────────────────────────────────┐
+│ EMAIL SYNC STARTED                     │
+└────────────────────────────────────────┘
+
+For each email, you'll see a collapsible group:
+
+[EMAIL 18ab...] Subject line
+├─ Gmail ID: 18ab...
+├─ From: recruiter@company.com
+├─ Date: 2026-07-17
+├─ ---
+├─ [Email Fetched] ✓
+├─ [HTML Cleaning] ✓
+├─ [Blocklist Check] ✓
+├─ [AI Processing]
+│  ├─ AI Response: {company: "...", status: "..."}
+│  ├─ Company: 96%  Job: 82%  Status: 74%
+│  └─ ✓ (timing)
+├─ [Final Merge] ✓
+├─ Final Parsed Object: {...}
+└─ Total: 1234.5ms
+
+
+LOG SECTIONS
+============
+
+[FETCH]
+Shows how many emails were retrieved from Gmail
+
+[EMAIL #N]
+Each email gets its own collapsible section
+
+Stages logged per email:
+1. Email Fetched ✓
+2. HTML Cleaning - Removes HTML tags, extracts plain text
+3. Blocklist Check - Verifies sender isn't blocked
+4. AI Processing - Claude extracts company/role/status
+5. Final Merge - Combines AI + regex results
+6. Final Parsed Object - The complete extracted data
+
+
+CONFIDENCE SCORES
+================
+
+Company: 0-100%
+  - 100% = Explicitly found in subject/body
+  - 70% = Found in signature
+  - 40% = Inferred from context
+  - 10% = Not found, using placeholder
+
+Job: 0-100%
+  - Based on how clearly the role is stated
+
+Status: 0-100%
+  - 100% = Clear status signal (offer, rejection, etc)
+  - 70% = Moderate signal
+  - 40% = Weak signal
+  - 10% = Ambiguous
+
+
+PARSING COMPLETE SUMMARY
+========================
+
+After all emails processed:
+[PARSING COMPLETE]
+  Total: 42
+  Applied: 25
+  Interview: 10
+  Assessment: 4
+  Offer: 2
+  Rejected: 1
+  Update: 0
+
+
+JOB CREATION
+============
+
+[JOB CREATION] Creating X jobs from applications
+  [JOB] Company Name | Role: X | Status: Applied | Events: 3
+    ✓ NEW job created (ID: xyz)
+  [JOB] Company Name 2 | Role: Y | Status: Interview | Events: 1
+    ✓ Existing job updated (ID: abc)
+
+
+SYNC COMPLETE
+=============
+
+╔════════════════════════════════════════╗
+║  EMAIL SYNC COMPLETE                  ║
+╚════════════════════════════════════════╝
+[RESULT] New Jobs: 5 | New Events: 12 | Errors: 0 | 3.24s
+
+
+ERROR LOGS
+==========
+
+If something fails, you'll see:
+
+[ERROR][Stage Name]
+  Stage: HTML Cleaning
+  Reason: Invalid UTF-8 sequence
+  Stack: Error: ... at line X
+
+
+TIMING INFORMATION
+==================
+
+Each stage shows duration in milliseconds:
+
+[Email Fetched] ✓ (5.2ms)
+[HTML Cleaning] ✓ (12.1ms)
+[AI Processing] ✓ (2145.3ms)
+[Final Merge] ✓ (1.2ms)
+
+Total: 2163.8ms
+
+
+FINDING ISSUES
+==============
+
+1. Email shows company: "Unknown Company"?
+   → Look at [AI Processing] section
+   → Check if AI found real company or marked as low confidence
+
+2. Status always "Applied"?
+   → Watch [AI Processing] for status_raw value
+   → Check if regex fallback was used instead
+
+3. Email skipped?
+   → Look for ⊘ (skip status)
+   → Check reason (not job-related, low confidence, blocked sender)
+
+4. Slow processing?
+   → Look at timing info
+   → AI Processing typically takes 1000-3000ms per email
+   → Other stages are <50ms
+
+
+EXAMPLE OUTPUT
+==============
+
+[EMAIL 18ab...] Update on your Verizon Application
+├─ Gmail ID: 18ab...
+├─ From: recruiter@verizon.com
+├─ Date: 2026-07-17
+├─ ---
+├─ [Email Fetched] ✓ (3.2ms)
+├─ [HTML Cleaning] ✓ (8.1ms)
+├─ Cleaned Body Length: 2847
+├─ [Blocklist Check] ✓ (1.2ms)
+├─ [AI Processing]
+│  ├─ Regex Detection
+│  │  └─ Matches: {company: "Verizon", status: "applied"}
+│  ├─ AI Processing
+│  │  └─ Raw Response: {company: "Verizon", status: "interview", ...}
+│  ├─ Merge Decision
+│  │  ├─ Regex: "Verizon" / "applied"
+│  │  ├─ AI: "Verizon" / "interview"
+│  │  └─ Final: "Verizon" / "interview" (AI more reliable)
+│  ├─ Confidence Scores
+│  │  └─ Company: 96%  Job: 82%  Status: 74%
+│  └─ ✓ (2145.2ms)
+├─ [Final Merge] ✓ (1.1ms)
+├─ Final Parsed Object:
+│  {
+│    company: "Verizon",
+│    eventType: "interview",
+│    role: "Software Engineer II",
+│    company_confidence: 0.96,
+│    status_confidence: 0.74,
+│    ...
+│  }
+└─ Total: 2158.8ms
+
+[EMAIL 19cd...] Google Assessment Ready
+...similar structure for next email...

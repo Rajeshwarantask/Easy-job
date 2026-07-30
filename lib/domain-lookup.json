@@ -1,0 +1,38 @@
+{
+  "domains": {
+    "honeywell.com": { "company": "Honeywell", "confidence": 0.95 },
+    "cbts.com": { "company": "CBTS", "confidence": 0.95 },
+    "recruitment.americanexpress.com": { "company": "American Express", "confidence": 0.95 },
+    "careers.americanexpress.com": { "company": "American Express", "confidence": 0.95 },
+    "amex.com": { "company": "American Express", "confidence": 0.90 },
+    "google.com": { "company": "Google", "confidence": 0.95 },
+    "amazon.com": { "company": "Amazon", "confidence": 0.95 },
+    "microsoft.com": { "company": "Microsoft", "confidence": 0.95 },
+    "apple.com": { "company": "Apple", "confidence": 0.95 },
+    "tesla.com": { "company": "Tesla", "confidence": 0.95 },
+    "meta.com": { "company": "Meta", "confidence": 0.95 },
+    "broadcom.com": { "company": "Broadcom", "confidence": 0.95 },
+    "spacex.com": { "company": "SpaceX", "confidence": 0.95 },
+    "ibm.com": { "company": "IBM", "confidence": 0.95 },
+    "oracle.com": { "company": "Oracle", "confidence": 0.95 },
+    "salesforce.com": { "company": "Salesforce", "confidence": 0.95 },
+    "uber.com": { "company": "Uber", "confidence": 0.95 },
+    "lyft.com": { "company": "Lyft", "confidence": 0.95 },
+    "airbnb.com": { "company": "Airbnb", "confidence": 0.95 },
+    "slack.com": { "company": "Slack", "confidence": 0.95 },
+    "zoom.us": { "company": "Zoom", "confidence": 0.95 },
+    "twilio.com": { "company": "Twilio", "confidence": 0.95 },
+    "stripe.com": { "company": "Stripe", "confidence": 0.95 },
+    "shopify.com": { "company": "Shopify", "confidence": 0.95 },
+    "github.com": { "company": "GitHub", "confidence": 0.95 }
+  },
+  "platforms": {
+    "myworkday.com": "Workday",
+    "workday.com": "Workday",
+    "greenhouse.io": "Greenhouse",
+    "lever.co": "Lever",
+    "indeed.com": "Indeed",
+    "naukri.com": "Naukri",
+    "linkedin.com": "LinkedIn"
+  }
+}
