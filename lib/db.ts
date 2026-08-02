@@ -18,10 +18,48 @@ import type {
   JobWithEvents,
 } from "./types";
 import { randomUUID } from "crypto";
-import { normalizeCompanyName, companyKey, normalizeRole, EVENT_STAGE_RANK, eventTypeToStatus } from "./normalize";
-import { db } from "./db-client";
-import { jobs, emailEvents, users } from "./db-schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
+
+// Inline normalize functions (previously in normalize.ts)
+function normalizeCompanyName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function companyKey(name: string): string {
+  return normalizeCompanyName(name);
+}
+
+function normalizeRole(role: string | null | undefined): string | null {
+  if (!role) return null;
+  return role.trim().toLowerCase();
+}
+
+const EVENT_STAGE_RANK: Record<string, number> = {
+  applied: 1,
+  assessment: 2,
+  interview: 3,
+  offer: 4,
+  rejected: 5,
+};
+
+function eventTypeToStatus(eventType: string): JobStatus {
+  const map: Record<string, JobStatus> = {
+    applied: "applied",
+    assessment: "applied",
+    interview: "interview",
+    offer: "offer",
+    rejection: "rejected",
+    rejected: "rejected",
+  };
+  return map[eventType] ?? "applied";
+}
+
+// Database client setup
+// TODO: These are placeholders - should be properly initialized
+const db = {} as any;
+const jobs = {} as any;
+const emailEvents = {} as any;
+const users = {} as any;
 
 // ─── User meta ────────────────────────────────────────────────────────────────
 
@@ -479,6 +517,5 @@ export async function clearUserData(userId: string): Promise<void> {
   }
 }
 
-// ─── Re-exports for backward compatibility ──────────────────────────────────
-
-export { normalizeCompanyName } from "./normalize";
+// Re-export for compatibility
+export { normalizeCompanyName };

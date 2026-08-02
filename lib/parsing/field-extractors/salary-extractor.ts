@@ -16,13 +16,14 @@ export interface SalaryExtraction {
 
 // Currency symbol to code mapping
 const CURRENCY_CODES: Record<string, string> = {
-  $: "USD",
-  £: "GBP",
-  €: "EUR",
+  "$": "USD",
+  // Using unicode escape sequences to avoid encoding issues
+  "\u00a3": "GBP", // £
+  "\u20ac": "EUR", // €
   "C$": "CAD",
-  A$: "AUD",
-  ¥: "JPY",
-  ₹: "INR",
+  "A$": "AUD",
+  "\u00a5": "JPY", // ¥
+  "\u20b9": "INR", // ₹
   "kr": "SEK",
 };
 
@@ -52,7 +53,8 @@ export function extractSalary(bodyText: string): SalaryExtraction {
   let frequency: "annual" | "hourly" | "contract" = "annual";
 
   // Pattern 1: "$X - $Y" or "$X to $Y" format
-  const rangePattern = /([£$€])\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:k|K|m|M)?\s*(?:to|-|–)\s*\1?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:k|K|m|M)?/i;
+  // Matches $, £, €
+  const rangePattern = /([$\u00a3\u20ac])\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:k|K|m|M)?\s*(?:to|-|–)\s*\1?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:k|K|m|M)?/i;
   const rangeMatch = text.match(rangePattern);
 
   if (rangeMatch) {
@@ -66,7 +68,7 @@ export function extractSalary(bodyText: string): SalaryExtraction {
 
   // Pattern 2: "Salary: $X" or "Annual salary $X"
   if (!salaryText) {
-    const singlePattern = /(?:salary|compensation|pay)[\s:]*(?:up to |upto |up to )?([£$€])\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:k|K|m|M)?/i;
+    const singlePattern = /(?:salary|compensation|pay)[\s:]*(?:up to |upto |up to )?([$\u00a3\u20ac])\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*(?:k|K|m|M)?/i;
     const singleMatch = text.match(singlePattern);
 
     if (singleMatch) {
@@ -80,7 +82,7 @@ export function extractSalary(bodyText: string): SalaryExtraction {
 
   // Pattern 3: Look for hourly rate ($X/hour or $X per hour)
   if (!salaryText) {
-    const hourlyPattern = /([£$€])\s*(\d{1,3}(?:\.\d{2})?)\s*(?:\/|per)\s*(?:hour|hr)/i;
+    const hourlyPattern = /([$\u00a3\u20ac])\s*(\d{1,3}(?:\.\d{2})?)\s*(?:\/|per)\s*(?:hour|hr)/i;
     const hourlyMatch = text.match(hourlyPattern);
 
     if (hourlyMatch) {
