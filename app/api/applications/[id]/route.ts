@@ -8,8 +8,9 @@ import { createClient } from "@/lib/supabase/server";
  */
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -23,7 +24,7 @@ export async function GET(
     const { data: app, error: appError } = await supabase
       .from("applications")
       .select("*")
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("user_id", session.user.id)
       .single();
 
@@ -38,7 +39,7 @@ export async function GET(
     const { data: events, error: eventsError } = await supabase
       .from("email_events")
       .select("*")
-      .eq("application_id", params.id)
+      .eq("application_id", id)
       .order("created_at", { ascending: false });
 
     if (eventsError) {
@@ -64,8 +65,9 @@ export async function GET(
  */
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -91,7 +93,7 @@ export async function PATCH(
     const { data, error } = await supabase
       .from("applications")
       .update(updates)
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("user_id", session.user.id)
       .select()
       .single();
@@ -120,8 +122,9 @@ export async function PATCH(
  */
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -134,7 +137,7 @@ export async function DELETE(
     const { error } = await supabase
       .from("applications")
       .update({ archived_at: new Date().toISOString() })
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("user_id", session.user.id);
 
     if (error) {

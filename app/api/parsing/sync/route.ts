@@ -107,39 +107,45 @@ export async function POST(request: NextRequest) {
       );
 
       if (successfulResults.length > 0) {
-        const applicationsToSave = successfulResults.map((r: ParseResult) => ({
-          user_id: userId,
-          company: r.application?.companyName || "",
-          company_normalized: (
-            r.application?.companyName || ""
-          ).toLowerCase().trim(),
-          role: r.application?.jobTitle || "",
-          role_normalized: (r.application?.jobTitle || "").toLowerCase().trim(),
-          location: r.application?.location,
-          work_mode: r.application?.workMode,
-          application_id: r.application?.applicationId,
-          requisition_id: r.application?.requisitionId,
-          candidate_id: r.application?.candidateId,
-          salary_min: r.application?.salaryRange?.min,
-          salary_max: r.application?.salaryRange?.max,
-          salary_currency: r.application?.salaryCurrency,
-          status: r.application?.eventClassification?.eventType || "applied",
-          last_event_type: r.application?.eventClassification?.eventType,
-          last_event_date: r.application?.eventClassification?.eventDate,
-          next_interview_date: r.application?.nextInterviewDate,
-          next_interview_time: r.application?.nextInterviewTime,
-          next_interview_link: r.application?.interviewLink?.url,
-          next_interview_link_platform: r.application?.interviewLink?.platform,
-          interviewer_name: r.application?.interviewerName,
-          interviewer_email: r.application?.interviewerEmail,
-          job_url: r.application?.jobUrl,
-          career_portal_url: r.application?.careerPortalUrl,
-          parser_confidence: r.application?.confidenceScore,
-          parsing_platform: r.application?.parsingPlatform,
-          validation_score: r.application?.validationScore,
-          synced_at: new Date().toISOString(),
-          last_email_thread_id: r.application?.originalEmail?.threadId,
-        }));
+        const applicationsToSave = successfulResults.map((r: ParseResult) => {
+          const app = r.application!;
+          const firstEvent = app.timelineEvents?.[0];
+          const eventDetails = firstEvent?.details || {};
+          
+          return {
+            user_id: userId,
+            company: app.company || "",
+            company_normalized: (app.companyNormalized || app.company || "")
+              .toLowerCase()
+              .trim(),
+            role: app.role || "",
+            role_normalized: (app.role || "").toLowerCase().trim(),
+            location: app.location || null,
+            work_mode: app.workMode || null,
+            application_id: app.applicationId || null,
+            requisition_id: app.requisitionId || null,
+            candidate_id: app.candidateId || null,
+            salary_min: null,
+            salary_max: null,
+            salary_currency: eventDetails.currency || "USD",
+            status: app.eventType || "applied",
+            last_event_type: app.eventType,
+            last_event_date: firstEvent?.date ? new Date(firstEvent.date).toISOString() : new Date().toISOString(),
+            next_interview_date: eventDetails.interviewDate ? new Date(eventDetails.interviewDate).toISOString() : null,
+            next_interview_time: firstEvent?.time || null,
+            next_interview_link: eventDetails.interviewLink || null,
+            next_interview_link_platform: null,
+            interviewer_name: eventDetails.interviewer || null,
+            interviewer_email: eventDetails.interviewerEmail || null,
+            job_url: app.jobUrl || null,
+            career_portal_url: app.careerPortalUrl || null,
+            parser_confidence: Math.round(app.parserConfidence * 100),
+            parsing_platform: app.parsedBy,
+            validation_score: Math.round(app.validation.overallConfidence * 100),
+            synced_at: new Date().toISOString(),
+            last_email_thread_id: app.originalEmail.gmailThreadId,
+          };
+        });
 
         const { error: upsertError } = await supabase
           .from("applications")

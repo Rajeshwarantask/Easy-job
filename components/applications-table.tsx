@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Application, ApplicationStatus } from "@/lib/db-types";
 import { Star, Archive, ExternalLink } from "lucide-react";
+import { ConfidenceBadge } from "./confidence-badge";
 
 interface ApplicationsTableProps {
   applications: Application[];
@@ -30,12 +31,7 @@ export function ApplicationsTable({
     return colors[status];
   };
 
-  const getConfidenceColor = (confidence?: number) => {
-    if (!confidence) return "text-gray-400";
-    if (confidence >= 0.8) return "text-green-400";
-    if (confidence >= 0.6) return "text-yellow-400";
-    return "text-red-400";
-  };
+
 
   return (
     <div className="overflow-x-auto border border-gray-700 rounded-lg">
@@ -85,11 +81,13 @@ export function ApplicationsTable({
                 </span>
               </td>
               <td className="px-4 py-3 text-center">
-                <span
-                  className={`${getConfidenceColor(app.parser_confidence)} font-mono text-xs`}
-                >
-                  {app.parser_confidence?.toFixed(0)}%
-                </span>
+                {app.parser_confidence && (
+                  <ConfidenceBadge
+                    confidence={app.parser_confidence / 100}
+                    size="sm"
+                    tooltip="Parser confidence score"
+                  />
+                )}
               </td>
               <td className="px-4 py-3 text-right">
                 <div className="flex justify-end gap-2">

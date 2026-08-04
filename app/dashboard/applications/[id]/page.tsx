@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Application, EmailEvent } from "@/lib/db-types";
 import { ArrowLeft, ExternalLink, Edit2, Loader } from "lucide-react";
+import { FieldOverrideModal } from "@/components/field-override-modal";
+import { EditableField } from "@/components/editable-field";
+import { ConfidenceBadge } from "@/components/confidence-badge";
 
 export default function ApplicationDetailPage() {
   const params = useParams();
@@ -15,6 +18,7 @@ export default function ApplicationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [notes, setNotes] = useState("");
+  const [overridingField, setOverridingField] = useState<string | null>(null);
 
   useEffect(() => {
     const loadApplication = async () => {
@@ -52,6 +56,30 @@ export default function ApplicationDetailPage() {
       setEditing(false);
     } catch (err) {
       console.error("[v0] Error saving notes:", err);
+    }
+  };
+
+  const handleFieldOverride = async (fieldName: string, newValue: any) => {
+    if (!application) return;
+
+    try {
+      const updateData: Record<string, any> = {};
+      updateData[fieldName] = newValue;
+
+      const res = await fetch(`/api/applications/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updateData),
+      });
+
+      if (!res.ok) throw new Error("Failed to update field");
+
+      const updatedApp = await res.json();
+      setApplication(updatedApp);
+      setOverridingField(null);
+    } catch (err) {
+      console.error("[v0] Error updating field:", err);
+      throw err;
     }
   };
 
@@ -104,41 +132,45 @@ export default function ApplicationDetailPage() {
                   <p className="text-gray-400 mt-1">{application.company}</p>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm text-gray-400">Parser Confidence</div>
-                  <div className="text-2xl font-bold text-blue-400">
-                    {confidencePercent}%
-                  </div>
+                  <div className="text-sm text-gray-400 mb-2">Parser Confidence</div>
+                  <ConfidenceBadge
+                    confidence={application.parser_confidence || 0}
+                    size="lg"
+                    showLabel
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-gray-700">
-                <div>
-                  <div className="text-sm text-gray-400">Status</div>
-                  <div className="text-lg font-semibold capitalize mt-1">
-                    {application.status}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-sm text-gray-400">Platform</div>
-                  <div className="text-lg font-semibold mt-1">
-                    {application.parsing_platform}
-                  </div>
-                </div>
+                <EditableField
+                  label="Status"
+                  value={application.status}
+                  confidence={0.95}
+                  onEdit={() => setOverridingField("status")}
+                  formatValue={(v) => v?.charAt(0).toUpperCase() + v?.slice(1)}
+                />
+                <EditableField
+                  label="Platform"
+                  value={application.parsing_platform}
+                  confidence={0.9}
+                  onEdit={() => setOverridingField("parsing_platform")}
+                />
                 {application.location && (
-                  <div>
-                    <div className="text-sm text-gray-400">Location</div>
-                    <div className="text-lg font-semibold mt-1">
-                      {application.location}
-                    </div>
-                  </div>
+                  <EditableField
+                    label="Location"
+                    value={application.location}
+                    confidence={0.75}
+                    onEdit={() => setOverridingField("location")}
+                  />
                 )}
                 {application.work_mode && (
-                  <div>
-                    <div className="text-sm text-gray-400">Work Mode</div>
-                    <div className="text-lg font-semibold capitalize mt-1">
-                      {application.work_mode}
-                    </div>
-                  </div>
+                  <EditableField
+                    label="Work Mode"
+                    value={application.work_mode}
+                    confidence={0.7}
+                    onEdit={() => setOverridingField("work_mode")}
+                    formatValue={(v) => v?.charAt(0).toUpperCase() + v?.slice(1)}
+                  />
                 )}
               </div>
             </div>
@@ -277,6 +309,35 @@ export default function ApplicationDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Override modal */}
+        {overridingField && application && (
+          <FieldOverrideModal
+            fieldName={overridingField}
+            currentValue={
+              application[overridingField as keyof Application]
+            }
+            confidenceScore={application.parser_confidence || 0.5}
+            onSave={(newValue) =>
+              handleFieldOverride(overridingField, newValue)
+            }
+            onCancel={() => setOverridingField(null)}
+            fieldType={
+              overridingField === "status" ? "select" : "text"
+            }
+            selectOptions={
+              overridingField === "status"
+                ? [
+                    { label: "Applied", value: "applied" },
+                    { label: "Assessment", value: "assessment" },
+                    { label: "Interview", value: "interview" },
+                    { label: "Offer", value: "offer" },
+                    { label: "Rejected", value: "rejected" },
+                  ]
+                : undefined
+            }
+          />
+        )}
       </div>
     </div>
   );
