@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { syncGmailEmails } from "@/lib/gmail";
 
+/**
+ * DEPRECATED: Use /api/parsing/sync instead.
+ * 
+ * This endpoint is no longer functional as the legacy gmail.ts module has been removed.
+ * New code should use the Phase 1-2 parsing pipeline via /api/parsing/sync.
+ */
 export async function POST(request: Request) {
   const session = await auth();
   
@@ -9,49 +14,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   
-  if (!session.accessToken) {
-    return NextResponse.json({ error: "No access token available" }, { status: 401 });
-  }
-  
-  if (session.error === "RefreshAccessTokenError") {
-    return NextResponse.json(
-      { error: "Session expired. Please sign in again." },
-      { status: 401 }
-    );
-  }
-  
-  try {
-    const body = await request.json().catch(() => ({}));
-    const includeDebug = body.debug === true;
-    
-    // Parse optional date range filter
-    let dateRange: any = undefined;
-    if (body.dateRange && body.dateRange !== "all") {
-      const ranges: Record<string, { type: "days"; value: number }> = {
-        "7days": { type: "days", value: 7 },
-        "30days": { type: "days", value: 30 },
-        "90days": { type: "days", value: 90 },
-      };
-      dateRange = ranges[body.dateRange];
-    }
-
-    const result = await syncGmailEmails(session.user.id, session.accessToken, dateRange);
-    
-    // Return debug info if requested
-    if (includeDebug && result.debug) {
-      return NextResponse.json({
-        ...result,
-        debug: result.debug,
-      });
-    }
-
-    const { debug, ...publicResult } = result;
-    return NextResponse.json(publicResult);
-  } catch (error) {
-    console.error("Sync error:", error);
-    return NextResponse.json(
-      { error: "Failed to sync emails" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(
+    {
+      error: "This endpoint is deprecated. Use /api/parsing/sync instead.",
+      note: "The legacy sync implementation has been removed. Please migrate to the Phase 1-2 parsing pipeline.",
+    },
+    { status: 410 } // 410 Gone
+  );
 }
