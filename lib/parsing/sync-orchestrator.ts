@@ -1,24 +1,59 @@
 /**
- * Sync Orchestrator
+ * Sync Orchestrator - The 10-Layer Parsing Architecture
  * 
- * Main orchestration layer that coordinates the entire parsing pipeline:
- * 1. MIME decode
- * 2. HTML clean
- * 3. Recruitment filter
- * 4. Platform detection
- * 5. Platform parsing
- * 6. Validation
- * 7. Enrichment
- * 8. Application mapping
- * 9. Timeline building
- * 10. Return ParsedApplication (no DB writes)
+ * This orchestrator ensures every email converts to a perfect ParsedApplication.
+ * Each layer solves ONE class of problems.
+ * 
+ * Layer 1: Input Normalization (mime-decoder + html-cleaner)
+ *   Problem: Every email looks different
+ *   Output: NormalizedEmail {subject, from, body, links, headers, attachments}
+ * 
+ * Layer 2: Recruitment Classification (recruitment-filter)
+ *   Problem: 90% of emails aren't job-related
+ *   Output: YES/NO + confidence + reason
+ * 
+ * Layer 3: Document Understanding (document-classifier)
+ *   Problem: What TYPE of recruitment email is this?
+ *   Output: confirmation|assessment|interview|offer|rejection|etc
+ * 
+ * Layer 4: Information Extraction (parsers)
+ *   Problem: Extract facts (company, role, salary, links, recruiter, etc)
+ *   Output: Each field has {value, confidence, source}
+ * 
+ * Layer 5: Validation (validation)
+ *   Problem: Do extracted facts make sense?
+ *   Output: valid|criticalIssues|warnings + overall confidence
+ * 
+ * Layer 6: Resolution (field-resolver)
+ *   Problem: Multiple extractors disagreed. Which is trustworthy?
+ *   Output: Single winning value + confidence + reasoning
+ * 
+ * Layer 7: Identity Resolution (identity-resolver)
+ *   Problem: New application or update to existing?
+ *   Output: isNewApplication + matchedApplicationId + confidence
+ * 
+ * Layer 8: State Engine (state-engine)
+ *   Problem: Track current state vs history
+ *   Output: currentState + stateHistory + isValid
+ * 
+ * Layer 9: Timeline Engine (timeline-builder)
+ *   Problem: Convert facts to timeline events
+ *   Output: [Event, Event, ...] with dates, times, types
+ * 
+ * Layer 10: Output Builder (below)
+ *   Problem: Package everything into ParsedApplication
+ *   Output: ParsedApplication (ready for DB or preview)
  */
 
 import { decodeMimePayload, type GmailMessagePart } from "./mime-decoder";
 import { cleanHtml, extractBodyText, extractAllLinks } from "./html-cleaner";
 import { shouldParseEmail, filterRecruitmentEmail } from "./recruitment-filter";
+import { classifyDocument } from "./document-classifier";
 import { detectPlatform } from "./platform-detector";
 import { parseEmail } from "./parsers";
+import { resolveAllFields } from "./field-resolver";
+import { resolveIdentity } from "./identity-resolver";
+import { computeApplicationState, isValidStateTransition } from "./state-engine";
 import { validateParsedApplication } from "./validation";
 import { enrichParsedApplication } from "./enrichment";
 import { mapApplicationToExisting, type MappingContext } from "./application-mapper";
@@ -111,6 +146,20 @@ export async function processSingleEmail(
       step: "recruitment_filter",
       status: "success",
       durationMs: Date.now() - filterStart,
+    });
+
+    // Step 3B: Document Understanding (Document Type Classification)
+    const classifyStart = Date.now();
+    const documentClassification = classifyDocument(
+      decoded.headers.subject,
+      decoded.headers.from,
+      bodyText,
+      decoded.headers
+    );
+    steps.push({
+      step: "document_classification",
+      status: "success",
+      durationMs: Date.now() - classifyStart,
     });
 
     // Step 4: Platform Detection
