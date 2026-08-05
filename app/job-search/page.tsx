@@ -1,5 +1,6 @@
-import { JobSearchClient } from "@/components/job-search/job-search-client";
+import { redirect } from "next/navigation";
 
+// Job search functionality moved to applications dashboard
 export default function JobSearchPage() {
-  return <JobSearchClient />;
+  redirect("/dashboard/applications");
 }

@@ -1,10 +1,6 @@
-import { SavedJobsClient } from "@/components/job-search/saved-jobs-client";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Saved Jobs | JobTrail",
-  description: "Your bookmarked job listings saved for later.",
-};
-
+// Saved jobs functionality moved to applications dashboard with star filter
 export default function SavedJobsPage() {
-  return <SavedJobsClient />;
+  redirect("/dashboard/applications?starred=true");
 }
