@@ -3,84 +3,86 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { Application, EmailEvent } from "@/lib/db-types";
 import { ArrowLeft, ExternalLink, Edit2, Loader } from "lucide-react";
 import { FieldOverrideModal } from "@/components/field-override-modal";
 import { EditableField } from "@/components/editable-field";
 import { ConfidenceBadge } from "@/components/confidence-badge";
+import type { ParsedApplication, TimelineEvent } from "@/lib/parsing/types";
+import ApplicationStore from "@/lib/store/application-store";
+import {
+  getApplicationId,
+  getCompany,
+  getRole,
+  getLocation,
+  getWorkMode,
+  getParsingPlatform,
+  getParserConfidence,
+  getJobUrl,
+  getStatus,
+} from "@/lib/parsing/application-accessors";
 
 export default function ApplicationDetailPage() {
   const params = useParams();
-  const id = params.id as string;
+  const id = params?.id as string;
 
-  const [application, setApplication] = useState<Application | null>(null);
-  const [events, setEvents] = useState<EmailEvent[]>([]);
+  const [application, setApplication] = useState<ParsedApplication | null>(null);
+  const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [notes, setNotes] = useState("");
   const [overridingField, setOverridingField] = useState<string | null>(null);
 
+  // small local helpers to avoid any casts — local only, not exported
+  function getFieldFromApp<T = unknown>(app: ParsedApplication | null, field: string): T | undefined {
+    if (!app) return undefined;
+    const r = app as unknown as Record<string, unknown>;
+    const v = r[field];
+    return v as T | undefined;
+  }
+
+  function getEventField<T = unknown>(ev: TimelineEvent | undefined, field: string): T | undefined {
+    if (!ev) return undefined;
+    const r = ev as unknown as Record<string, unknown>;
+    return r[field] as T | undefined;
+  }
+
   useEffect(() => {
-    const loadApplication = async () => {
-      try {
-        const res = await fetch(`/api/applications/${id}`);
-        if (!res.ok) throw new Error("Failed to load application");
+    setLoading(true);
+    const snapshot = ApplicationStore.read();
+    const found = snapshot.applications.find((a) => getApplicationId(a) === id) ?? null;
+    setApplication(found);
+    setEvents((found?.timelineEvents ?? []) as TimelineEvent[]);
+    setNotes(getFieldFromApp<string>(found, "notes") ?? "");
+    setLoading(false);
 
-        const data = await res.json();
-        setApplication(data.application);
-        setEvents(data.email_events || []);
-        setNotes(data.application.notes || "");
-      } catch (err) {
-        console.error("[v0] Error loading application:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    const unsub = ApplicationStore.subscribe((s) => {
+      const f = s.applications.find((a) => getApplicationId(a) === id) ?? null;
+      setApplication(f);
+      setEvents((f?.timelineEvents ?? []) as TimelineEvent[]);
+      setNotes(getFieldFromApp<string>(f, "notes") ?? "");
+    });
 
-    loadApplication();
+    return () => unsub();
   }, [id]);
 
-  const handleSaveNotes = async () => {
+  const handleSaveNotes = () => {
     if (!application) return;
-
-    try {
-      const res = await fetch(`/api/applications/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
-      });
-
-      if (!res.ok) throw new Error("Failed to save notes");
-
-      setApplication(await res.json());
-      setEditing(false);
-    } catch (err) {
-      console.error("[v0] Error saving notes:", err);
-    }
+    // use store API to update fields
+    ApplicationStore.updateFields(id, { notes });
+    setEditing(false);
   };
 
-  const handleFieldOverride = async (fieldName: string, newValue: any) => {
+  const handleFieldOverride = (fieldName: string, newValue: unknown) => {
     if (!application) return;
 
-    try {
-      const updateData: Record<string, any> = {};
-      updateData[fieldName] = newValue;
-
-      const res = await fetch(`/api/applications/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updateData),
-      });
-
-      if (!res.ok) throw new Error("Failed to update field");
-
-      const updatedApp = await res.json();
-      setApplication(updatedApp);
+    if (fieldName === "status") {
+      ApplicationStore.updateStatus(id, String(newValue));
       setOverridingField(null);
-    } catch (err) {
-      console.error("[v0] Error updating field:", err);
-      throw err;
+      return;
     }
+
+    ApplicationStore.updateFields(id, { [fieldName]: newValue } as Partial<ParsedApplication>);
+    setOverridingField(null);
   };
 
   if (loading) {
@@ -95,10 +97,7 @@ export default function ApplicationDetailPage() {
     return (
       <div className="min-h-screen bg-background">
         <div className="max-w-4xl mx-auto px-4 py-8">
-          <Link
-            href="/dashboard/applications"
-            className="flex items-center gap-2 text-blue-400 hover:text-blue-300 mb-8"
-          >
+          <Link href="/dashboard/applications" className="flex items-center gap-2 text-blue-400 hover:text-blue-300 mb-8">
             <ArrowLeft size={20} />
             Back to applications
           </Link>
@@ -108,16 +107,32 @@ export default function ApplicationDetailPage() {
     );
   }
 
-  const confidencePercent = Math.round((application.parser_confidence || 0) * 100);
+  const company = getCompany(application) ?? "";
+  const role = getRole(application) ?? "";
+  const confidence = getParserConfidence(application) ?? 0;
+  const platform = getParsingPlatform(application) ?? "";
+  const location = getLocation(application) ?? undefined;
+  const workMode = getWorkMode(application) ?? undefined;
+  const jobUrl = getJobUrl(application) ?? undefined;
+  const status = getStatus(application) ?? "";
+
+  // legacy fields accessed via getFieldFromApp to avoid `any` and without adding new exported accessors
+  const salaryMin = getFieldFromApp<number>(application, "salary_min");
+  const salaryMax = getFieldFromApp<number>(application, "salary_max");
+  const salaryCurrency = getFieldFromApp<string>(application, "salary_currency");
+
+  const nextInterviewDate = getFieldFromApp<string>(application, "next_interview_date");
+  const nextInterviewTime = getFieldFromApp<string>(application, "next_interview_time");
+  const nextInterviewLink = getFieldFromApp<string>(application, "next_interview_link");
+  const interviewerName = getFieldFromApp<string>(application, "interviewer_name");
+
+  const timelineEvents = (application.timelineEvents ?? []) as TimelineEvent[];
 
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Header */}
-        <Link
-          href="/dashboard/applications"
-          className="flex items-center gap-2 text-blue-400 hover:text-blue-300 mb-8"
-        >
+        <Link href="/dashboard/applications" className="flex items-center gap-2 text-blue-400 hover:text-blue-300 mb-8">
           <ArrowLeft size={20} />
           Back to applications
         </Link>
@@ -128,135 +143,76 @@ export default function ApplicationDetailPage() {
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 mb-6">
               <div className="flex justify-between items-start mb-4">
                 <div>
-                  <h1 className="text-3xl font-bold">{application.role}</h1>
-                  <p className="text-gray-400 mt-1">{application.company}</p>
+                  <h1 className="text-3xl font-bold">{role}</h1>
+                  <p className="text-gray-400 mt-1">{company}</p>
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-gray-400 mb-2">Parser Confidence</div>
-                  <ConfidenceBadge
-                    confidence={application.parser_confidence || 0}
-                    size="lg"
-                    showLabel
-                  />
+                  <ConfidenceBadge confidence={confidence} size="lg" showLabel />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-gray-700">
-                <EditableField
-                  label="Status"
-                  value={application.status}
-                  confidence={0.95}
-                  onEdit={() => setOverridingField("status")}
-                  formatValue={(v) => v?.charAt(0).toUpperCase() + v?.slice(1)}
-                />
-                <EditableField
-                  label="Platform"
-                  value={application.parsing_platform}
-                  confidence={0.9}
-                  onEdit={() => setOverridingField("parsing_platform")}
-                />
-                {application.location && (
-                  <EditableField
-                    label="Location"
-                    value={application.location}
-                    confidence={0.75}
-                    onEdit={() => setOverridingField("location")}
-                  />
-                )}
-                {application.work_mode && (
-                  <EditableField
-                    label="Work Mode"
-                    value={application.work_mode}
-                    confidence={0.7}
-                    onEdit={() => setOverridingField("work_mode")}
-                    formatValue={(v) => v?.charAt(0).toUpperCase() + v?.slice(1)}
-                  />
-                )}
+                <EditableField label="Status" value={status} confidence={0.95} onEdit={() => setOverridingField("status")} formatValue={(v) => v?.charAt(0).toUpperCase() + v?.slice(1)} />
+                <EditableField label="Platform" value={platform} confidence={0.9} onEdit={() => setOverridingField("parsing_platform")} />
+                {location && <EditableField label="Location" value={location} confidence={0.75} onEdit={() => setOverridingField("location")} />}
+                {workMode && <EditableField label="Work Mode" value={workMode} confidence={0.7} onEdit={() => setOverridingField("work_mode")} formatValue={(v) => v?.charAt(0).toUpperCase() + v?.slice(1)} />}
               </div>
             </div>
 
-            {/* Salary info */}
-            {(application.salary_min || application.salary_max) && (
+            {(salaryMin || salaryMax) && (
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 mb-6">
                 <h2 className="text-lg font-semibold mb-4">Compensation</h2>
                 <div className="text-2xl font-bold">
-                  {application.salary_currency} {application.salary_min || application.salary_max}
-                  {application.salary_max &&
-                    application.salary_min &&
-                    ` - ${application.salary_max}`}
+                  {salaryCurrency ?? ""} {salaryMin ?? salaryMax ?? ""}
+                  {salaryMax && salaryMin && ` - ${salaryMax}`}
                 </div>
               </div>
             )}
 
-            {/* Interview info */}
-            {application.next_interview_date && (
+            {nextInterviewDate && (
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 mb-6">
                 <h2 className="text-lg font-semibold mb-4">Interview</h2>
                 <div className="space-y-2">
                   <div>
                     <div className="text-sm text-gray-400">Date & Time</div>
                     <div className="mt-1">
-                      {new Date(application.next_interview_date).toLocaleDateString()}
-                      {application.next_interview_time && ` at ${application.next_interview_time}`}
+                      {new Date(nextInterviewDate).toLocaleDateString()}
+                      {nextInterviewTime && ` at ${nextInterviewTime}`}
                     </div>
                   </div>
-                  {application.next_interview_link && (
+                  {nextInterviewLink && (
                     <div>
                       <div className="text-sm text-gray-400">Meeting Link</div>
-                      <a
-                        href={application.next_interview_link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 flex items-center gap-2 mt-1"
-                      >
+                      <a href={nextInterviewLink} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 flex items-center gap-2 mt-1">
                         Join meeting
                         <ExternalLink size={16} />
                       </a>
                     </div>
                   )}
-                  {application.interviewer_name && (
+                  {interviewerName && (
                     <div>
                       <div className="text-sm text-gray-400">Interviewer</div>
-                      <div className="mt-1">{application.interviewer_name}</div>
+                      <div className="mt-1">{interviewerName}</div>
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {/* Notes */}
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-semibold">Notes</h2>
-                <button
-                  onClick={() => setEditing(!editing)}
-                  className="p-2 hover:bg-gray-800 rounded transition-colors"
-                >
+                <button onClick={() => setEditing(!editing)} className="p-2 hover:bg-gray-800 rounded transition-colors">
                   <Edit2 size={16} />
                 </button>
               </div>
               {editing ? (
                 <div>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white mb-3"
-                    rows={4}
-                    placeholder="Add your notes..."
-                  />
+                  <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full bg-gray-800 border border-gray-700 rounded p-3 text-white mb-3" rows={4} placeholder="Add your notes..." />
                   <div className="flex gap-2">
-                    <button
-                      onClick={handleSaveNotes}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => setEditing(false)}
-                      className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded transition-colors"
-                    >
-                      Cancel
-                    </button>
+                    <button onClick={handleSaveNotes} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors">Save</button>
+                    <button onClick={() => setEditing(false)} className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded transition-colors">Cancel</button>
                   </div>
                 </div>
               ) : (
@@ -268,40 +224,29 @@ export default function ApplicationDetailPage() {
           {/* Sidebar - Email events */}
           <div>
             <div className="bg-gray-900 border border-gray-700 rounded-lg p-6">
-              <h2 className="text-lg font-semibold mb-4">
-                Timeline ({events.length})
-              </h2>
+              <h2 className="text-lg font-semibold mb-4">Timeline ({timelineEvents.length})</h2>
               <div className="space-y-3 max-h-96 overflow-y-auto">
-                {events.map((event) => (
-                  <div
-                    key={event.id}
-                    className="pb-3 border-b border-gray-700 last:border-0"
-                  >
-                    <div className="text-sm font-medium capitalize">
-                      {event.event_type || "Update"}
+                {timelineEvents.map((event) => {
+                  const eventRecord = event as unknown as Record<string, unknown>;
+                  const eventId = (eventRecord.id as string) ?? String(eventRecord.date ?? Math.random());
+                  const eventType = (eventRecord.event_type as string) ?? (eventRecord.type as string) ?? "Update";
+                  const eventDateRaw = (eventRecord.date as string) ?? (eventRecord.createdAt as string) ?? (eventRecord.created_at as string);
+                  const eventSummary = (eventRecord.details && (eventRecord.details as any).brief) ?? (eventRecord.details as string) ?? undefined;
+
+                  return (
+                    <div key={eventId} className="pb-3 border-b border-gray-700 last:border-0">
+                      <div className="text-sm font-medium capitalize">{eventType}</div>
+                      <div className="text-xs text-gray-400 mt-1">{eventDateRaw ? new Date(eventDateRaw).toLocaleDateString() : ""}</div>
+                      {eventSummary && <div className="text-xs text-gray-300 mt-2">{String(eventSummary)}</div>}
                     </div>
-                    <div className="text-xs text-gray-400 mt-1">
-                      {new Date(event.created_at).toLocaleDateString()}
-                    </div>
-                    {event.email_subject && (
-                      <div className="text-xs text-gray-300 mt-2">
-                        {event.email_subject}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
-            {/* Job posting link */}
-            {application.job_url && (
+            {jobUrl && (
               <div className="mt-6">
-                <a
-                  href={application.job_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors w-full justify-center"
-                >
+                <a href={jobUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors w-full justify-center">
                   <ExternalLink size={16} />
                   View Job Posting
                 </a>
@@ -314,17 +259,11 @@ export default function ApplicationDetailPage() {
         {overridingField && application && (
           <FieldOverrideModal
             fieldName={overridingField}
-            currentValue={
-              application[overridingField as keyof Application]
-            }
-            confidenceScore={application.parser_confidence || 0.5}
-            onSave={(newValue) =>
-              handleFieldOverride(overridingField, newValue)
-            }
+            currentValue={getFieldFromApp(application, overridingField)}
+            confidenceScore={getParserConfidence(application) || 0.5}
+            onSave={(newValue) => handleFieldOverride(overridingField, newValue)}
             onCancel={() => setOverridingField(null)}
-            fieldType={
-              overridingField === "status" ? "select" : "text"
-            }
+            fieldType={overridingField === "status" ? "select" : "text"}
             selectOptions={
               overridingField === "status"
                 ? [
