@@ -72,15 +72,15 @@ export function DashboardStats({ jobs, lastSynced }: DashboardStatsProps) {
   ];
 
   return (
-    <div className="space-y-4">
-      {/* Page title + tab toggle */}
+    <div className="space-y-6">
+      {/* Section Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-2xl font-bold text-foreground">Application Metrics</h2>
+          <p className="text-sm text-muted-foreground mt-1">
             {total} total application{total !== 1 ? "s" : ""}
             {lastSynced && (
-              <span className="ml-2 inline-flex items-center gap-1">
+              <span className="ml-2 inline-flex items-center gap-1 text-xs">
                 <Clock className="w-3 h-3" />
                 {formatDistanceToNow(new Date(lastSynced), { addSuffix: true })}
               </span>
@@ -111,18 +111,16 @@ export function DashboardStats({ jobs, lastSynced }: DashboardStatsProps) {
       </div>
 
       {view === "overview" && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {stats.map((stat) => (
-            <Card key={stat.label} className="p-4 light:glass light:shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className={cn("p-2 rounded-md", stat.bg, stat.color)}>
-                  <stat.icon className="w-4 h-4" />
-                </div>
+            <Card key={stat.label} className="p-6 border border-border bg-card/50 hover:bg-card/80 transition-colors">
+              <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-2xl font-semibold text-foreground leading-none">
-                    {stat.value}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
+                  <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">{stat.value}</p>
+                </div>
+                <div className={cn("p-3 rounded-lg", stat.bg, stat.color)}>
+                  <stat.icon className="w-5 h-5" />
                 </div>
               </div>
             </Card>
@@ -131,14 +129,14 @@ export function DashboardStats({ jobs, lastSynced }: DashboardStatsProps) {
       )}
 
       {view === "insights" && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Funnel */}
-          <Card className="p-4 space-y-3 light:glass light:shadow-sm">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Target className="w-4 h-4 text-muted-foreground" />
-              Application funnel
+          <Card className="p-6 space-y-4 border border-border bg-card/50">
+            <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <Target className="w-5 h-5 text-primary" />
+              Application Funnel
             </div>
-            <div className="space-y-2.5">
+            <div className="space-y-4">
               <FunnelBar label="Applied" count={counts.applied} max={total} color="bg-blue-500" />
               <FunnelBar label="Interview" count={counts.interview} max={total} color="bg-amber-500" />
               <FunnelBar label="Offer" count={counts.offer} max={total} color="bg-green-500" />
@@ -147,10 +145,10 @@ export function DashboardStats({ jobs, lastSynced }: DashboardStatsProps) {
           </Card>
 
           {/* Key metrics */}
-          <Card className="p-4 space-y-3 light:glass light:shadow-sm">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <TrendingUp className="w-4 h-4 text-muted-foreground" />
-              Key metrics
+          <Card className="p-6 space-y-4 border border-border bg-card/50">
+            <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <TrendingUp className="w-5 h-5 text-primary" />
+              Key Metrics
             </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">

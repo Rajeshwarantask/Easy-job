@@ -15,12 +15,8 @@ import {
   Menu,
   LayoutDashboard,
   GitBranch,
-  CalendarDays,
-  BarChart3,
   Settings,
   Briefcase,
-  Search,
-  Bookmark,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,13 +24,9 @@ const NAV_LINKS = [
   {
     group: "App",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Overview, stats & activity" },
-      { href: "/job-search", label: "Job Search", icon: Search, description: "Find jobs across LinkedIn, Indeed & more" },
-      { href: "/saved-jobs", label: "Saved Jobs", icon: Bookmark, description: "Bookmarked listings from job search" },
-      { href: "/timeline", label: "Applications", icon: GitBranch, description: "Search, filter & track stages" },
-      { href: "/calendar", label: "Calendar", icon: CalendarDays, description: "Deadlines & interview dates" },
-      { href: "/insights", label: "Insights", icon: BarChart3, description: "Charts, funnel & analytics" },
-      { href: "/settings", label: "Settings", icon: Settings, description: "Preferences & account" },
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Overview & application stats" },
+      { href: "/dashboard/applications", label: "Applications", icon: GitBranch, description: "Your parsed Gmail applications" },
+      { href: "/settings", label: "Settings", icon: Settings, description: "Preferences & sync options" },
     ],
   },
 ];

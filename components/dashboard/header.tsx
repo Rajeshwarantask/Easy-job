@@ -15,8 +15,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AddJobDialog } from "./add-job-dialog";
 import { HamburgerMenu } from "@/components/nav/hamburger-menu";
-import { CommandPalette } from "@/components/command-palette";
-import { NotificationsInbox } from "@/components/notifications-inbox";
 import { useTheme } from "@/components/providers/theme-provider";
 
 interface DashboardHeaderProps {
@@ -47,10 +45,6 @@ export function DashboardHeader({ user, isDemo = false }: DashboardHeaderProps) 
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Command palette search trigger */}
-          <CommandPalette onAddJob={() => setShowAddJob(true)} />
-
-          {!isDemo && <NotificationsInbox />}
 
           {isDemo ? (
             <Link href="/">

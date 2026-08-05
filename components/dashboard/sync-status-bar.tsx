@@ -1,14 +1,15 @@
 
 "use client";
 
-import { CheckCircle2, AlertCircle, Loader2, Clock, Info } from "lucide-react";
+import { CheckCircle2, AlertCircle, Loader2, Clock } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import type { SyncStatus } from "@/hooks/use-sync-jobs";
+
+type SyncStatus = "idle" | "syncing" | "success" | "error";
 
 interface SyncStatusBarProps {
   status: SyncStatus;
   lastSynced: Date | null;
-  errorMessage: string | null;
+  errorMessage?: string | null;
 }
 
 export function SyncStatusBar({ status, lastSynced, errorMessage }: SyncStatusBarProps) {
