@@ -11,6 +11,7 @@ export function DashboardClient() {
   const [applications, setApplications] = useState<ParsedApplication[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Load applications from sessionStorage on mount
   useEffect(() => {
@@ -33,32 +34,45 @@ export function DashboardClient() {
 
   const handleSync = async () => {
     setSyncing(true);
+    setError(null);
     try {
       const response = await fetch("/api/parsing/sync", {
         method: "POST",
       });
-      if (response.ok) {
-        const result = await response.json();
-        const parsed = result.applications || [];
-        setApplications(parsed);
-        const syncTime = new Date();
-        setLastSynced(syncTime);
+      
+      const result = await response.json();
 
-        // Save to sessionStorage with versioning and metadata
-        sessionStorage.setItem(
-          "jobtrail:cache",
-          JSON.stringify({
-            version: 1,
-            applications: parsed,
-            lastSync: syncTime.toISOString(),
-            parserVersion: result.summary?.parserVersion || "1.0.0",
-            gmailHistoryId: result.summary?.lastGmailHistoryId || null,
-            syncDurationMs: result.syncDurationMs,
-          })
-        );
+      if (!response.ok) {
+        const errorMsg =
+          result.error ||
+          result.errors?.[0]?.error ||
+          `Sync failed with status ${response.status}`;
+        setError(errorMsg);
+        console.error("[v0] Sync error:", errorMsg);
+        return;
       }
+
+      const parsed = result.applications || [];
+      setApplications(parsed);
+      const syncTime = new Date();
+      setLastSynced(syncTime);
+
+      // Save to sessionStorage with versioning and metadata
+      sessionStorage.setItem(
+        "jobtrail:cache",
+        JSON.stringify({
+          version: 1,
+          applications: parsed,
+          lastSync: syncTime.toISOString(),
+          parserVersion: "1.0.0",
+          gmailHistoryId: null,
+          syncDurationMs: result.syncDurationMs,
+        })
+      );
     } catch (error) {
-      console.error("Sync failed:", error);
+      const msg = error instanceof Error ? error.message : String(error);
+      setError(`Failed to sync: ${msg}`);
+      console.error("[v0] Sync failed:", error);
     } finally {
       setSyncing(false);
     }
@@ -96,7 +110,14 @@ export function DashboardClient() {
             </Button>
           </div>
 
-          {/* Status cards row */}
+          {/* Error alert */}
+          {error && (
+            <div className="mb-6 p-4 rounded-lg border border-red-200/50 bg-red-50/50 text-red-900">
+              <p className="text-sm font-medium">{error}</p>
+            </div>
+          )}
+
+        {/* Status cards row */}
           <div className="grid grid-cols-3 gap-3 mt-8">
             <div className="bg-card border border-border rounded-lg p-4">
               <p className="text-sm text-muted-foreground font-medium">Total Applications</p>
