@@ -6,6 +6,24 @@ import { Application, ApplicationStatus } from "@/lib/db-types";
 import { ApplicationsTable } from "@/components/applications-table";
 import { Loader, RefreshCw, Filter } from "lucide-react";
 
+const CACHE_KEY = "jobtrail:cache";
+
+function readCache() {
+  try {
+    const cached = sessionStorage.getItem(CACHE_KEY);
+    if (!cached) return null;
+    return JSON.parse(cached);
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(data: any) {
+  sessionStorage.setItem(CACHE_KEY, JSON.stringify(data));
+  // Notify other clients/components
+  window.dispatchEvent(new Event("applications-updated"));
+}
+
 export default function ApplicationsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -18,43 +36,68 @@ export default function ApplicationsPage() {
   const status = searchParams.get("status");
   const starred = searchParams.get("starred") === "true";
 
-  const loadApplications = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      if (status) params.set("status", status);
-      if (starred) params.set("starred", "true");
-      params.set("limit", "100");
-
-      const res = await fetch(`/api/applications?${params}`);
-      if (!res.ok) throw new Error("Failed to load applications");
-
-      const data = await res.json();
-      setApplications(data.applications);
-      setTotal(data.total);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Initialize from sessionStorage only — no network request
   useEffect(() => {
-    loadApplications();
+    setLoading(true);
+    const cache = readCache();
+    if (cache && Array.isArray(cache.applications)) {
+      let apps: Application[] = cache.applications;
+      // Apply filters if present
+      if (status) apps = apps.filter((a) => a.status === status);
+      if (starred) apps = apps.filter((a) => a.starred === true);
+      setApplications(apps);
+      setTotal(cache.applications.length || apps.length);
+    } else {
+      setApplications([]);
+      setTotal(0);
+    }
+    setLoading(false);
+
+    function onUpdated() {
+      const c = readCache();
+      if (c && Array.isArray(c.applications)) {
+        let apps: Application[] = c.applications;
+        if (status) apps = apps.filter((a) => a.status === status);
+        if (starred) apps = apps.filter((a) => a.starred === true);
+        setApplications(apps);
+        setTotal(c.applications.length || apps.length);
+      } else {
+        setApplications([]);
+        setTotal(0);
+      }
+    }
+
+    window.addEventListener("applications-updated", onUpdated);
+    return () => window.removeEventListener("applications-updated", onUpdated);
   }, [status, starred]);
 
   const handleSync = async () => {
     try {
       setSyncing(true);
-      const res = await fetch("/api/parsing/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
+      setError(null);
+      const res = await fetch("/api/parsing/sync", { method: "POST" });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || result.errors?.[0]?.error || "Sync failed");
 
-      if (!res.ok) throw new Error("Sync failed");
+      const parsed = Array.isArray(result.applications) ? result.applications : [];
 
-      // Reload applications
-      await loadApplications();
+      const cachePayload = {
+        version: 1,
+        applications: parsed,
+        lastSync: new Date().toISOString(),
+        processed: result.processed ?? parsed.length,
+        syncDurationMs: result.syncDurationMs ?? 0,
+      };
+
+      writeCache(cachePayload);
+
+      // Update local view with filters applied
+      let appsToShow = parsed;
+      if (status) appsToShow = appsToShow.filter((a: any) => a.status === status);
+      if (starred) appsToShow = appsToShow.filter((a: any) => a.starred === true);
+
+      setApplications(appsToShow);
+      setTotal(parsed.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
     } finally {
@@ -62,61 +105,50 @@ export default function ApplicationsPage() {
     }
   };
 
+  // Replace server-side updates with client-only updates: modify sessionStorage and local state
+  const persistApplications = (updatedApps: Application[]) => {
+    const cache = readCache() || {};
+    const newCache = {
+      ...(cache || {}),
+      version: 1,
+      applications: updatedApps,
+      lastSync: cache.lastSync || new Date().toISOString(),
+      processed: cache.processed ?? updatedApps.length,
+      syncDurationMs: cache.syncDurationMs ?? 0,
+    };
+    writeCache(newCache);
+  };
+
   const handleStatusChange = async (id: string, newStatus: ApplicationStatus) => {
     try {
-      const res = await fetch(`/api/applications/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      if (!res.ok) throw new Error("Failed to update status");
-
-      // Update local state
-      setApplications(
-        applications.map((app) =>
-          app.id === id ? { ...app, status: newStatus } : app
-        )
-      );
+      const updated = applications.map((app) => (app.id === id ? { ...app, status: newStatus } : app));
+      setApplications(updated);
+      // also update full cache (unfiltered)
+      const full = (readCache()?.applications || []) as Application[];
+      const fullUpdated = full.map((app) => (app.id === id ? { ...app, status: newStatus } : app));
+      persistApplications(fullUpdated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Update failed");
     }
   };
 
-  const handleStar = async (id: string, starred: boolean) => {
+  const handleStar = async (id: string, starredFlag: boolean) => {
     try {
-      const res = await fetch(`/api/applications/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ starred }),
-      });
-
-      if (!res.ok) throw new Error("Failed to update star");
-
-      // Update local state
-      setApplications(
-        applications.map((app) =>
-          app.id === id ? { ...app, starred } : app
-        )
-      );
+      const updated = applications.map((app) => (app.id === id ? { ...app, starred: starredFlag } : app));
+      setApplications(updated);
+      const full = (readCache()?.applications || []) as Application[];
+      const fullUpdated = full.map((app) => (app.id === id ? { ...app, starred: starredFlag } : app));
+      persistApplications(fullUpdated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Update failed");
     }
   };
 
-  const statuses: ApplicationStatus[] = [
-    "applied",
-    "assessment",
-    "interview",
-    "offer",
-  ];
-  const statusCounts = statuses.reduce(
-    (acc, s) => {
-      acc[s] = applications.filter((a) => a.status === s).length;
-      return acc;
-    },
-    {} as Record<ApplicationStatus, number>
-  );
+  const statuses: ApplicationStatus[] = ["applied", "assessment", "interview", "offer"];
+  const statusCounts = statuses.reduce((acc, s) => {
+    acc[s] = applications.filter((a) => a.status === s).length;
+    return acc;
+  }, {} as Record<ApplicationStatus, number>);
 
   return (
     <div className="min-h-screen bg-background">
@@ -125,9 +157,7 @@ export default function ApplicationsPage() {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold">Job Applications</h1>
-            <p className="text-gray-400 mt-1">
-              Track {total} parsed application{total !== 1 ? "s" : ""}
-            </p>
+            <p className="text-gray-400 mt-1">Track {total} parsed application{total !== 1 ? "s" : ""}</p>
           </div>
           <button
             onClick={handleSync}
@@ -141,9 +171,7 @@ export default function ApplicationsPage() {
 
         {/* Error message */}
         {error && (
-          <div className="mb-6 p-4 bg-red-900/20 border border-red-700 rounded-lg text-red-200">
-            {error}
-          </div>
+          <div className="mb-6 p-4 bg-red-900/20 border border-red-700 rounded-lg text-red-200">{error}</div>
         )}
 
         {/* Status cards */}
@@ -154,21 +182,12 @@ export default function ApplicationsPage() {
               onClick={() => {
                 const params = new URLSearchParams();
                 if (s !== status) params.set("status", s);
-                router.push(
-                  `/dashboard/applications?${params.toString()}` || 
-                  "/dashboard/applications"
-                );
+                router.push(`/dashboard/applications?${params.toString()}` || "/dashboard/applications");
               }}
-              className={`p-4 rounded-lg border transition-colors ${
-                status === s
-                  ? "bg-gray-800 border-blue-500"
-                  : "bg-gray-900 border-gray-700 hover:border-gray-600"
-              }`}
+              className={`p-4 rounded-lg border transition-colors ${status === s ? "bg-gray-800 border-blue-500" : "bg-gray-900 border-gray-700 hover:border-gray-600"}`}
             >
               <div className="text-sm text-gray-400 capitalize">{s}</div>
-              <div className="text-2xl font-bold mt-1">
-                {statusCounts[s] || 0}
-              </div>
+              <div className="text-2xl font-bold mt-1">{statusCounts[s] || 0}</div>
             </button>
           ))}
         </div>
@@ -180,15 +199,9 @@ export default function ApplicationsPage() {
               const params = new URLSearchParams();
               if (status) params.set("status", status);
               if (!starred) params.set("starred", "true");
-              router.push(
-                `${starred ? "/dashboard/applications" : `/dashboard/applications?${params.toString()}&starred=true`}`
-              );
+              router.push(`${starred ? "/dashboard/applications" : `/dashboard/applications?${params.toString()}&starred=true`}`);
             }}
-            className={`flex items-center gap-2 px-3 py-2 rounded border transition-colors ${
-              starred
-                ? "bg-gray-800 border-yellow-500"
-                : "bg-gray-900 border-gray-700 hover:border-gray-600"
-            }`}
+            className={`flex items-center gap-2 px-3 py-2 rounded border transition-colors ${starred ? "bg-gray-800 border-yellow-500" : "bg-gray-900 border-gray-700 hover:border-gray-600"}`}
           >
             <Filter size={16} />
             <span className="text-sm">Starred</span>
@@ -201,11 +214,7 @@ export default function ApplicationsPage() {
             <Loader className="animate-spin" />
           </div>
         ) : (
-          <ApplicationsTable
-            applications={applications}
-            onStatusChange={handleStatusChange}
-            onStar={handleStar}
-          />
+          <ApplicationsTable applications={applications} onStatusChange={handleStatusChange} onStar={handleStar} />
         )}
       </div>
     </div>
