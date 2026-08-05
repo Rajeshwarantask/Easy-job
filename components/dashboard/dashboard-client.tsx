@@ -16,14 +16,19 @@ export function DashboardClient() {
 
   // Load applications from sessionStorage on mount
   useEffect(() => {
-    const cached = sessionStorage.getItem("jobtrail:applications");
+    const cached = sessionStorage.getItem("jobtrail:cache");
     if (cached) {
       try {
         const data = JSON.parse(cached);
-        setApplications(data.applications || []);
-        setLastSynced(data.lastSyncedAt ? new Date(data.lastSyncedAt) : null);
+        // Validate cache version and expiry
+        if (data.version === 1 && data.applications) {
+          setApplications(data.applications);
+          if (data.lastSync) {
+            setLastSynced(new Date(data.lastSync));
+          }
+        }
       } catch {
-        // Ignore parse errors
+        // Ignore parse errors, will re-sync
       }
     }
   }, []);
@@ -38,14 +43,19 @@ export function DashboardClient() {
         const result = await response.json();
         const parsed = result.applications || [];
         setApplications(parsed);
-        setLastSynced(new Date());
+        const syncTime = new Date();
+        setLastSynced(syncTime);
 
-        // Save to sessionStorage
+        // Save to sessionStorage with versioning and metadata
         sessionStorage.setItem(
-          "jobtrail:applications",
+          "jobtrail:cache",
           JSON.stringify({
+            version: 1,
             applications: parsed,
-            lastSyncedAt: new Date().toISOString(),
+            lastSync: syncTime.toISOString(),
+            parserVersion: result.summary?.parserVersion || "1.0.0",
+            gmailHistoryId: result.summary?.lastGmailHistoryId || null,
+            syncDurationMs: result.syncDurationMs,
           })
         );
       }
