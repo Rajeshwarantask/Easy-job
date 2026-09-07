@@ -49,14 +49,24 @@ export default function ApplicationDetailPage() {
   useEffect(() => {
     setLoading(true);
     const snapshot = ApplicationStore.read();
-    const found = snapshot.applications.find((a) => getApplicationId(a) === id) ?? null;
+    const decodedId = decodeURIComponent(id);
+    const found = snapshot.applications.find((a) => {
+      const stableId = getApplicationId(a);
+      const legacyId = String((a as unknown as Record<string, unknown>).id ?? "");
+      return stableId === decodedId || legacyId === decodedId;
+    }) ?? null;
     setApplication(found);
     setEvents((found?.timelineEvents ?? []) as TimelineEvent[]);
     setNotes(getFieldFromApp<string>(found, "notes") ?? "");
     setLoading(false);
 
     const unsub = ApplicationStore.subscribe((s) => {
-      const f = s.applications.find((a) => getApplicationId(a) === id) ?? null;
+      const decodedId = decodeURIComponent(id);
+      const f = s.applications.find((a) => {
+        const stableId = getApplicationId(a);
+        const legacyId = String((a as unknown as Record<string, unknown>).id ?? "");
+        return stableId === decodedId || legacyId === decodedId;
+      }) ?? null;
       setApplication(f);
       setEvents((f?.timelineEvents ?? []) as TimelineEvent[]);
       setNotes(getFieldFromApp<string>(f, "notes") ?? "");
@@ -68,7 +78,7 @@ export default function ApplicationDetailPage() {
   const handleSaveNotes = () => {
     if (!application) return;
     // use store API to update fields
-    ApplicationStore.updateFields(id, { notes });
+    ApplicationStore.update(decodeURIComponent(id), { notes });
     setEditing(false);
   };
 
@@ -76,12 +86,12 @@ export default function ApplicationDetailPage() {
     if (!application) return;
 
     if (fieldName === "status") {
-      ApplicationStore.updateStatus(id, String(newValue));
+      ApplicationStore.updateStatus(decodeURIComponent(id), String(newValue));
       setOverridingField(null);
       return;
     }
 
-    ApplicationStore.updateFields(id, { [fieldName]: newValue } as Partial<ParsedApplication>);
+    ApplicationStore.update(decodeURIComponent(id), { [fieldName]: newValue } as Partial<ParsedApplication>);
     setOverridingField(null);
   };
 
