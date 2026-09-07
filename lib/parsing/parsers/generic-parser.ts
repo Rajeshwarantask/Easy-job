@@ -23,6 +23,7 @@ import {
   hasInterviewSchedulingContent,
 } from "../field-extractors/interview-link-extractor";
 import { extractSalary } from "../field-extractors/salary-extractor";
+import { extractDeterministicFallbacks, normalizeExtractedValue } from "../deterministic-fallbacks";
 
 export class GenericParser implements PlatformParser {
   platformId = "generic";
@@ -189,6 +190,15 @@ export class GenericParser implements PlatformParser {
         careerPortalUrl = allLinks[1];
       }
     }
+
+    // Deterministic fallbacks keep status/rejection emails useful without AI.
+    const fallback = extractDeterministicFallbacks(from, subject, body);
+    company = normalizeExtractedValue(company) || fallback.company;
+    role = normalizeExtractedValue(role) || fallback.role;
+    if (!jobUrl) jobUrl = fallback.jobUrl;
+    if (!careerPortalUrl) careerPortalUrl = fallback.careerPortalUrl;
+    if (company && companyConfidence === 0) companyConfidence = 0.42;
+    if (role && roleConfidence === 0) roleConfidence = 0.42;
 
     // ─── Calculate Confidence ───
     const fieldsFound = [company, role, location, workMode].filter(Boolean).length;

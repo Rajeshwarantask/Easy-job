@@ -124,7 +124,7 @@ export async function processSingleEmail(
       const filterResult = filterRecruitmentEmail(
         decoded.headers.subject,
         decoded.headers.from,
-        gmailMessage.snippet || ""
+        bodyText
       );
 
       if (!filterResult.isRecruiting && filterResult.confidence >= 0.8) {
