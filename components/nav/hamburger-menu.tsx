@@ -15,6 +15,7 @@ import {
   Menu,
   LayoutDashboard,
   GitBranch,
+  Building2,
   Settings,
   Briefcase,
 } from "lucide-react";
@@ -26,6 +27,7 @@ const NAV_LINKS = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, description: "Overview & application stats" },
       { href: "/dashboard/applications", label: "Applications", icon: GitBranch, description: "Your parsed Gmail applications" },
+      { href: "/dashboard/companies", label: "Companies", icon: Building2, description: "Group roles by company" },
       { href: "/settings", label: "Settings", icon: Settings, description: "Preferences & sync options" },
     ],
   },

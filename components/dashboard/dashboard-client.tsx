@@ -1,172 +1,72 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { RefreshCw, Mail, CheckCircle2, AlertCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowUpRight, CalendarDays, CheckCircle2, Clock3, Mail, RefreshCw, TrendingUp } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { DashboardStats } from "@/components/dashboard/dashboard-stats";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty } from "@/components/ui/empty";
 import { SyncStatusBar } from "@/components/dashboard/sync-status-bar";
-import type { ParsedApplication } from "@/lib/types";
+import type { ParsedApplication, ApplicationStatus } from "@/lib/types";
+
+const CACHE_KEY = "jobtrail:cache";
+const statusLabel: Record<ApplicationStatus, string> = { applied: "Applied", assessment: "Assessment", interview: "Interview", offer: "Offer", rejected: "Rejected", withdrawn: "Withdrawn" };
+const statusVariant: Record<ApplicationStatus, "default" | "secondary" | "outline" | "destructive"> = { applied: "secondary", assessment: "outline", interview: "default", offer: "default", rejected: "destructive", withdrawn: "outline" };
+
+function readCache() {
+  try { return JSON.parse(sessionStorage.getItem(CACHE_KEY) || "null"); } catch { return null; }
+}
 
 export function DashboardClient() {
   const [applications, setApplications] = useState<ParsedApplication[]>([]);
-  const [syncing, setSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load applications from sessionStorage on mount
-  useEffect(() => {
-    const cached = sessionStorage.getItem("jobtrail:cache");
-    if (cached) {
-      try {
-        const data = JSON.parse(cached);
-        // Validate cache version and expiry
-        if (data.version === 1 && data.applications) {
-          setApplications(data.applications);
-          if (data.lastSync) {
-            setLastSynced(new Date(data.lastSync));
-          }
-        }
-      } catch {
-        // Ignore parse errors, will re-sync
-      }
-    }
-  }, []);
-
-  const handleSync = async () => {
-    setSyncing(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/parsing/sync", {
-        method: "POST",
-      });
-      
-      const result = await response.json();
-
-      if (!response.ok) {
-        const errorMsg =
-          result.error ||
-          result.errors?.[0]?.error ||
-          `Sync failed with status ${response.status}`;
-        setError(errorMsg);
-        console.error("[v0] Sync error:", errorMsg);
-        return;
-      }
-
-      const parsed = result.applications || [];
-      setApplications(parsed);
-      const syncTime = new Date();
-      setLastSynced(syncTime);
-
-      // Save to sessionStorage with versioning and metadata
-      sessionStorage.setItem(
-        "jobtrail:cache",
-        JSON.stringify({
-          version: 1,
-          applications: parsed,
-          lastSync: syncTime.toISOString(),
-          parserVersion: "1.0.0",
-          gmailHistoryId: null,
-          syncDurationMs: result.syncDurationMs,
-        })
-      );
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      setError(`Failed to sync: ${msg}`);
-      console.error("[v0] Sync failed:", error);
-    } finally {
-      setSyncing(false);
-    }
+  const loadCache = () => {
+    const cache = readCache();
+    setApplications(Array.isArray(cache?.applications) ? cache.applications : []);
+    setLastSynced(cache?.lastSync ? new Date(cache.lastSync) : null);
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-background via-background to-card/20">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Hero Header */}
-        <div className="mb-12">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Mail className="w-6 h-6 text-primary" />
-                </div>
-                <div>
-                  <h1 className="text-4xl font-bold tracking-tight text-foreground">
-                    Application Tracker
-                  </h1>
-                  <p className="text-base text-muted-foreground mt-1">
-                    Gmail-powered recruitment email parsing and organization
-                  </p>
-                </div>
-              </div>
-            </div>
-            <Button
-              onClick={handleSync}
-              disabled={syncing}
-              size="lg"
-              className="self-start sm:self-auto gap-2 font-medium"
-            >
-              <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Syncing Gmail..." : "Sync Gmail"}
-            </Button>
-          </div>
+  useEffect(() => { loadCache(); window.addEventListener("applications-updated", loadCache); return () => window.removeEventListener("applications-updated", loadCache); }, []);
 
-          {/* Error alert */}
-          {error && (
-            <div className="mb-6 p-4 rounded-lg border border-red-200/50 bg-red-50/50 text-red-900">
-              <p className="text-sm font-medium">{error}</p>
-            </div>
-          )}
+  const handleSync = async () => {
+    setSyncing(true); setError(null);
+    try {
+      const response = await fetch("/api/parsing/sync", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || result.errors?.[0]?.error || "Sync failed");
+      const syncedAt = new Date().toISOString();
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify({ version: 1, applications: result.applications || [], lastSync: syncedAt, parserVersion: "1.0.0", syncDurationMs: result.syncDurationMs || 0 }));
+      window.dispatchEvent(new Event("applications-updated"));
+    } catch (value) { setError(value instanceof Error ? value.message : "Sync failed"); }
+    finally { setSyncing(false); }
+  };
 
-        {/* Status cards row */}
-          <div className="grid grid-cols-3 gap-3 mt-8">
-            <div className="bg-card border border-border rounded-lg p-4">
-              <p className="text-sm text-muted-foreground font-medium">Total Applications</p>
-              <p className="text-2xl font-bold text-foreground mt-1">{applications.length}</p>
-            </div>
-            <div className="bg-card border border-border rounded-lg p-4">
-              <p className="text-sm text-muted-foreground font-medium">Last Synced</p>
-              <p className="text-sm font-semibold text-foreground mt-1">
-                {lastSynced ? new Date(lastSynced).toLocaleDateString() : "Never"}
-              </p>
-            </div>
-            <div className="bg-card border border-border rounded-lg p-4">
-              <p className="text-sm text-muted-foreground font-medium">Parser Version</p>
-              <p className="text-sm font-semibold text-foreground mt-1">1.0.0</p>
-            </div>
-          </div>
-        </div>
+  const metrics = useMemo(() => ({
+    active: applications.filter((app) => !["rejected", "withdrawn"].includes(app.status)).length,
+    interviews: applications.filter((app) => app.status === "interview").length,
+    offers: applications.filter((app) => app.status === "offer").length,
+    companies: new Set(applications.map((app) => app.company).filter(Boolean)).size,
+  }), [applications]);
+  const upcoming = applications.filter((app) => app.interviewDate).sort((a, b) => String(a.interviewDate).localeCompare(String(b.interviewDate))).slice(0, 3);
+  const recent = applications.slice().sort((a, b) => String(b.lastUpdated || b.appliedDate).localeCompare(String(a.lastUpdated || a.appliedDate))).slice(0, 5);
 
-        {/* Sync Status */}
-        {lastSynced && (
-          <div className="mb-8">
-            <SyncStatusBar
-              status={syncing ? "syncing" : "success"}
-              lastSynced={lastSynced}
-            />
-          </div>
-        )}
-
-        {/* Main Content */}
-        {applications.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card/50 p-16 text-center">
-            <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
-              <AlertCircle className="w-6 h-6 text-muted-foreground" />
-            </div>
-            <h2 className="text-2xl font-semibold text-foreground mb-2">
-              No applications parsed yet
-            </h2>
-            <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
-              Connect your Gmail and sync your recruitment emails to get started. Your emails will be automatically parsed and organized.
-            </p>
-            <Button onClick={handleSync} size="lg" className="gap-2">
-              <Mail className="w-4 h-4" />
-              Sync Gmail Now
-            </Button>
-          </div>
-        ) : (
-          <DashboardStats jobs={applications} lastSynced={lastSynced?.toISOString()} />
-        )}
-      </div>
-    </div>
-  );
+  return <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 py-8 lg:px-10">
+    <header className="flex flex-col justify-between gap-5 border-b border-border pb-7 sm:flex-row sm:items-end">
+      <div><p className="text-sm font-medium text-muted-foreground">Workspace overview</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">Good morning. Here&apos;s your search.</h1><p className="mt-2 text-sm text-muted-foreground">A focused view of applications parsed from Gmail.</p></div>
+      <Button onClick={handleSync} disabled={syncing}><RefreshCw data-icon="inline-start" className={syncing ? "animate-spin" : undefined} />{syncing ? "Syncing Gmail" : "Sync Gmail"}</Button>
+    </header>
+    {error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>}
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {[{ label: "Active applications", value: metrics.active, icon: TrendingUp }, { label: "Interviews", value: metrics.interviews, icon: CalendarDays }, { label: "Offers", value: metrics.offers, icon: CheckCircle2 }, { label: "Companies", value: metrics.companies, icon: Mail }].map(({ label, value, icon: Icon }) => <Card key={label}><CardContent className="flex items-center justify-between p-5"><div><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-3xl font-semibold">{value}</p></div><Icon className="size-5 text-muted-foreground" /></CardContent></Card>)}
+    </section>
+    {lastSynced && <SyncStatusBar status={syncing ? "syncing" : "success"} lastSynced={lastSynced} />}
+    {applications.length === 0 ? <Empty className="border border-dashed py-20"><Mail className="size-8 text-muted-foreground" /><h2 className="text-xl font-semibold">Your workspace is ready</h2><p className="max-w-md text-sm text-muted-foreground">Sync Gmail to turn recruitment emails into a clear application timeline. Nothing is stored on the server.</p><Button onClick={handleSync}>Sync your inbox</Button></Empty> : <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+      <Card><CardHeader className="flex flex-row items-center justify-between"><CardTitle>Recent applications</CardTitle><Button asChild variant="ghost" size="sm"><Link href="/dashboard/applications">View all <ArrowUpRight data-icon="inline-end" /></Link></Button></CardHeader><CardContent className="p-0">{recent.map((app) => <Link key={app.id} href={`/dashboard/applications/${app.id}`} className="flex items-center justify-between gap-4 border-t px-6 py-4 transition-colors hover:bg-muted/40"><div className="min-w-0"><p className="truncate font-medium">{app.role || "Untitled role"}</p><p className="truncate text-sm text-muted-foreground">{app.company || "Unknown company"}</p></div><Badge variant={statusVariant[app.status]}>{statusLabel[app.status]}</Badge></Link>)}</CardContent></Card>
+      <Card><CardHeader><CardTitle>Next up</CardTitle></CardHeader><CardContent className="flex flex-col gap-4">{upcoming.length ? upcoming.map((app) => <Link key={app.id} href={`/dashboard/applications/${app.id}`} className="flex gap-3 rounded-md border p-3 hover:bg-muted/40"><Clock3 className="mt-0.5 size-4 text-muted-foreground" /><div><p className="font-medium">{app.role || "Interview"}</p><p className="text-sm text-muted-foreground">{app.company} · {app.interviewDate}</p></div></Link>) : <p className="text-sm text-muted-foreground">No upcoming interviews parsed yet.</p>}</CardContent></Card>
+    </div>}
+  </div>;
 }
