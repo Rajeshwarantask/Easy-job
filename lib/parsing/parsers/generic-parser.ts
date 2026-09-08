@@ -180,11 +180,11 @@ export class GenericParser implements PlatformParser {
     const platformFields = extractPlatformFields(from, subject, body);
     const fallback = extractDeterministicFallbacks(from, subject, body);
     company = (isValidCompanyCandidate(platformFields.company) ? platformFields.company : undefined)
-      || (isValidCompanyCandidate(company) ? normalizeExtractedValue(company) : undefined)
-      || fallback.company;
+      || (isValidCompanyCandidate(fallback.company) ? fallback.company : undefined)
+      || (isValidCompanyCandidate(company) ? normalizeExtractedValue(company) : undefined);
     role = (isValidRoleCandidate(platformFields.role) ? platformFields.role : undefined)
-      || (isValidRoleCandidate(role) ? normalizeExtractedValue(role) : undefined)
-      || fallback.role;
+      || (isValidRoleCandidate(fallback.role) ? fallback.role : undefined)
+      || (isValidRoleCandidate(role) ? normalizeExtractedValue(role) : undefined);
     if (platformFields.location && !location) location = platformFields.location;
     const extractionSources = [
       platformFields.companySource && `company:${platformFields.companySource}`,
