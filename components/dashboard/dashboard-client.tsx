@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty } from "@/components/ui/empty";
 import { SyncStatusBar } from "@/components/dashboard/sync-status-bar";
 import type { ParsedApplication, ApplicationStatus } from "@/lib/types";
+import { ApplicationStore } from "@/lib/store/application-store";
 
 const CACHE_KEY = "jobtrail:cache";
 const statusLabel: Record<ApplicationStatus, string> = { applied: "Applied", assessment: "Assessment", interview: "Interview", offer: "Offer", rejected: "Rejected", withdrawn: "Withdrawn" };
@@ -39,7 +40,7 @@ export function DashboardClient() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || result.errors?.[0]?.error || "Sync failed");
       const syncedAt = new Date().toISOString();
-      sessionStorage.setItem(CACHE_KEY, JSON.stringify({ version: 1, applications: result.applications || [], lastSync: syncedAt, parserVersion: "1.0.0", syncDurationMs: result.syncDurationMs || 0 }));
+      ApplicationStore.write({ version: 1, applications: result.applications || [], lastSync: syncedAt, parserVersion: "1.0.0", processed: result.processed || 0, syncDurationMs: result.syncDurationMs || 0 });
       window.dispatchEvent(new Event("applications-updated"));
     } catch (value) { setError(value instanceof Error ? value.message : "Sync failed"); }
     finally { setSyncing(false); }

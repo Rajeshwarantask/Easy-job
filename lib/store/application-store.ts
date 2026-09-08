@@ -29,6 +29,31 @@ const CACHE_KEY = "jobtrail:cache";
 const CACHE_VERSION = 1;
 const PARSER_VERSION = "1.0.0";
 
+function compactApplication(application: ParsedApplication): ParsedApplication {
+  const compact = { ...application } as ParsedApplication & Record<string, unknown>;
+  delete compact.parserApplication;
+  delete compact.rawEmail;
+  delete compact.bodyText;
+  delete compact.emailBody;
+  if (compact.originalEmail && typeof compact.originalEmail === "object") {
+    const email = compact.originalEmail as Record<string, unknown>;
+    compact.originalEmail = {
+      gmailMessageId: email.gmailMessageId,
+      gmailThreadId: email.gmailThreadId,
+      subject: email.subject,
+      from: email.from,
+      date: email.date,
+      internalDate: email.internalDate,
+      dateHeader: email.dateHeader,
+    } as ParsedApplication["originalEmail"];
+  }
+  return compact;
+}
+
+function compactApplications(applications: ParsedApplication[]) {
+  return applications.map(compactApplication);
+}
+
 const EMPTY_CACHE: ApplicationCache = {
   version: CACHE_VERSION,
   parserVersion: PARSER_VERSION,
@@ -81,7 +106,7 @@ function write(payload: Partial<ApplicationCache>) {
   const next: ApplicationCache = {
     version: CACHE_VERSION,
     parserVersion: payload.parserVersion ?? current.parserVersion,
-    applications: Array.isArray(payload.applications) ? payload.applications : current.applications,
+    applications: Array.isArray(payload.applications) ? compactApplications(payload.applications) : current.applications,
     lastSync: payload.lastSync ?? current.lastSync,
     processed: typeof payload.processed === "number" ? payload.processed : current.processed,
     syncDurationMs: typeof payload.syncDurationMs === "number" ? payload.syncDurationMs : current.syncDurationMs,
@@ -90,9 +115,14 @@ function write(payload: Partial<ApplicationCache>) {
   try {
     sessionStorage.setItem(CACHE_KEY, JSON.stringify(next));
   } catch (e) {
-    // swallow storage errors but log for debugging
-    // eslint-disable-next-line no-console
-    console.error("[ApplicationStore] write failed:", e);
+    try {
+      const reduced = { ...next, applications: next.applications.map(compactApplication) };
+      sessionStorage.removeItem(CACHE_KEY);
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify(reduced));
+    } catch (retryError) {
+      try { sessionStorage.removeItem(CACHE_KEY); } catch {}
+      console.error("[ApplicationStore] cache quota exceeded; cleared stale cache", retryError);
+    }
   }
 
   // notify other windows/components
