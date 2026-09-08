@@ -30,6 +30,48 @@ async function gmailFetch(path: string, accessToken: string) {
   return response.json();
 }
 
+function toDashboardApplication(application: NonNullable<ParseResult["application"]>) {
+  const original = application.originalEmail;
+  const eventType = String(application.eventType || "update").toLowerCase();
+  const status = eventType.includes("reject")
+    ? "rejected"
+    : eventType.includes("offer")
+      ? "offer"
+      : eventType.includes("interview")
+        ? "interview"
+        : eventType.includes("assessment") || eventType.includes("test")
+          ? "assessment"
+          : "applied";
+  const date = original?.date instanceof Date ? original.date.toISOString() : original?.date ? new Date(original.date).toISOString() : null;
+  const interviewEvent = application.timelineEvents?.find((event) => event.type === "interview");
+
+  return {
+    ...application,
+    id: original?.gmailMessageId || application.applicationId || crypto.randomUUID(),
+    company: application.company || "",
+    role: application.role || null,
+    location: application.location || null,
+    status,
+    platform: application.parsedBy || "gmail",
+    appliedDate: date,
+    lastUpdated: date,
+    interviewDate: interviewEvent?.date instanceof Date ? interviewEvent.date.toISOString() : null,
+    interviewTime: interviewEvent?.time || null,
+    interviewLink: interviewEvent?.details?.interviewLink || null,
+    timezone: interviewEvent?.timezone || null,
+    jobUrl: application.jobUrl || null,
+    assessmentLink: null,
+    recruiterName: null,
+    recruiterEmail: null,
+    salary: null,
+    gmailThreadId: original?.gmailThreadId || null,
+    parserVersion: application.parserVersion || "1.0.0",
+    confidence: application.parserConfidence || 0,
+    originalEmail: original,
+    parserApplication: application,
+  };
+}
+
 async function fetchAllMessageIds(accessToken: string) {
   const ids: Array<{ id: string; threadId: string }> = [];
   let pageToken: string | undefined;
@@ -81,7 +123,7 @@ export async function POST() {
 
     return NextResponse.json({
       processed: result.processed,
-      applications: successful.map((entry) => entry.application),
+      applications: successful.map((entry) => toDashboardApplication(entry.application!)),
       errors: [...diagnostics.errors, ...result.errors.map((entry) => `${entry.gmailMessageId ?? "unknown"}: ${entry.error}`)],
       diagnostics,
       syncDurationMs: Date.now() - startTime,

@@ -83,6 +83,8 @@ export interface ParsedApplication {
     to?: string;
     subject: string;
     date: Date;
+    internalDate?: string;
+    dateHeader?: string;
     bodyText: string; // plaintext version
   };
 

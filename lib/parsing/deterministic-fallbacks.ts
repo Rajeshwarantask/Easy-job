@@ -73,6 +73,27 @@ export function extractDeterministicFallbacks(from: string, subject: string, bod
   };
 }
 
+export type RecruitmentEventType = "applied" | "assessment" | "interview" | "offer" | "rejection" | "update";
+
+export function classifyRecruitmentEvent(subject: string, from: string, body: string): { type: RecruitmentEventType; confidence: number } {
+  const text = `${subject}\n${from}\n${body}`;
+  const negative = /(?:not selected|not moving forward|move forward with other|regret to inform|unfortunately|withdrawn|withdrawal|application closed|position has been filled)/i;
+  if (/(?:withdrawn|withdrawal|application closed)/i.test(text)) return { type: "rejection", confidence: 0.95 };
+  if (negative.test(text)) return { type: "rejection", confidence: 0.92 };
+  if (/(?:offer|congratulations|pleased to offer|compensation package|offer letter)/i.test(text)) return { type: "offer", confidence: 0.94 };
+  if (/(?:interview|phone screen|video call|onsite|hiring manager|schedule.*call|meet with)/i.test(text)) return { type: "interview", confidence: 0.9 };
+  if (/(?:assessment|coding challenge|technical test|questionnaire|take-home|hackerrank|codility)/i.test(text)) return { type: "assessment", confidence: 0.9 };
+  if (/(?:application received|received your application|thank you for applying|application submitted|applied for)/i.test(text)) return { type: "applied", confidence: 0.86 };
+  return { type: "update", confidence: 0.35 };
+}
+
+export function extractExplicitDate(text: string): Date | undefined {
+  const match = text.match(/(?:on|for|date(?:\s+of)?|scheduled(?:\s+for)?)\s*[:\-]?\s*((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+\w+\s+\d{1,2}(?:,\s*\d{4})?|\w+\s+\d{1,2},?\s+\d{4})/i);
+  if (!match) return undefined;
+  const date = new Date(match[1]);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
 export function isRecruitmentLike(subject: string, from: string, body: string): boolean {
   return /(?:application|applied|candidate|interview|assessment|offer|recruit|hiring|position|opportunity|job|role|shortlist|selected|rejected|unfortunately|moving forward|careers|talent|thank you for your interest)/i.test(`${subject} ${from} ${body}`);
 }
