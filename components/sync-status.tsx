@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useGmailSync } from "@/hooks/use-gmail-sync";
 import { Loader, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
 
 interface SyncStatusProps {
@@ -8,49 +9,28 @@ interface SyncStatusProps {
 }
 
 export function SyncStatus({ onSync }: SyncStatusProps) {
-  const [syncing, setSyncing] = useState(false);
+  const { syncing, error: syncError, lastCompletedAt, sync } = useGmailSync();
   const [lastSync, setLastSync] = useState<Date | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const error = syncError;
   const [status, setStatus] = useState<"idle" | "syncing" | "success" | "error">(
     "idle"
   );
 
+  useEffect(() => {
+    if (lastCompletedAt) {
+      setLastSync(new Date(lastCompletedAt));
+      setStatus("success");
+    }
+    if (syncing) setStatus("syncing");
+    if (syncError) setStatus("error");
+  }, [lastCompletedAt, syncing, syncError]);
+
   const handleSync = async () => {
     try {
-      setSyncing(true);
-      setStatus("syncing");
-      setError(null);
-
-      const res = await fetch("/api/parsing/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gmailMessages: [] }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Sync failed");
-      }
-
-      const data = await res.json();
-      setLastSync(new Date());
-      setStatus("success");
-
-      if (onSync) {
-        await onSync();
-      }
-    } catch (err) {
-      console.error("[v0] Sync error:", err);
-      setError(err instanceof Error ? err.message : "Unknown error");
-      setStatus("error");
-    } finally {
-      setSyncing(false);
-
-      // Reset success status after 3 seconds
-      setTimeout(() => {
-        if (status === "success") {
-          setStatus("idle");
-        }
-      }, 3000);
+      await sync({ from: null, to: null, label: "All time" });
+      if (onSync) await onSync();
+    } catch {
+      // Shared sync state exposes the error to every button.
     }
   };
 

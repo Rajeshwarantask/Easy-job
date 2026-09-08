@@ -10,6 +10,8 @@ import { Empty } from "@/components/ui/empty";
 import { SyncStatusBar } from "@/components/dashboard/sync-status-bar";
 import { DateRangeFilter, type DateRangeValue } from "@/components/dashboard/date-range-filter";
 import { ApplicationStore } from "@/lib/store/application-store";
+import { useGmailSync } from "@/hooks/use-gmail-sync";
+import { formatSyncDate } from "@/lib/sync/gmail-sync-client";
 import { getApplicationId } from "@/lib/parsing/application-accessors";
 import type { ApplicationStatus, ParsedApplication } from "@/lib/types";
 
@@ -30,21 +32,12 @@ function inRange(app: ParsedApplication, range: DateRangeValue) {
 export default function DashboardPage() {
   const [applications, setApplications] = useState<ParsedApplication[]>([]);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<DateRangeValue>({ from: null, to: null, label: "All time" });
+  const { syncing, error, sync } = useGmailSync();
 
   useEffect(() => ApplicationStore.subscribe((snapshot) => { setApplications(snapshot.applications); setLastSynced(snapshot.lastSync ? new Date(snapshot.lastSync) : null); }), []);
 
-  const handleSync = async () => {
-    setSyncing(true); setError(null);
-    try {
-      const response = await fetch("/api/parsing/sync", { method: "POST" });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || result.errors?.[0]?.error || "Gmail sync failed");
-      ApplicationStore.write({ applications: result.applications || [], lastSync: new Date().toISOString(), processed: result.processed || 0, syncDurationMs: result.syncDurationMs || 0, parserVersion: "1.0.0" });
-    } catch (value) { setError(value instanceof Error ? value.message : "Gmail sync failed"); } finally { setSyncing(false); }
-  };
+  const handleSync = () => sync({ from: formatSyncDate(range.from), to: formatSyncDate(range.to), label: range.label });
 
   const filtered = useMemo(() => applications.filter((app) => inRange(app, range)), [applications, range]);
   const metrics = useMemo(() => ({ active: filtered.filter((app) => !["rejected", "withdrawn"].includes(app.status)).length, interviews: filtered.filter((app) => app.status === "interview").length, offers: filtered.filter((app) => app.status === "offer").length, companies: new Set(filtered.map((app) => app.company).filter(Boolean)).size }), [filtered]);
