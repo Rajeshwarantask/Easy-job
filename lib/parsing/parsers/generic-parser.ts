@@ -23,7 +23,7 @@ import {
   hasInterviewSchedulingContent,
 } from "../field-extractors/interview-link-extractor";
 import { extractSalary } from "../field-extractors/salary-extractor";
-import { extractDeterministicFallbacks, normalizeExtractedValue } from "../deterministic-fallbacks";
+import { classifyRecruitmentEvent, extractDeterministicFallbacks, extractExplicitDate, normalizeExtractedValue } from "../deterministic-fallbacks";
 
 export class GenericParser implements PlatformParser {
   platformId = "generic";
@@ -45,25 +45,9 @@ export class GenericParser implements PlatformParser {
     const lowerFull = fullText.toLowerCase();
 
     // ─── Event Type Detection (Enhanced) ───
-    let eventType = "update";
-    let eventConfidence = 0.3;
-
-    if (/(?:congratulations|offer|job offer|we.{0,10}pleased|you.{0,10}selected|extended.*offer)/i.test(fullText)) {
-      eventType = "offer";
-      eventConfidence = 0.75;
-    } else if (/(?:interview|interview scheduled|interview time|interview date|call.*scheduled|interview confirmed)/i.test(fullText)) {
-      eventType = "interview";
-      eventConfidence = 0.75;
-    } else if (/(?:assessment|coding.*challenge|take.*test|questionnaire|screening|technical.*test|complete.*assessment)/i.test(fullText)) {
-      eventType = "assessment";
-      eventConfidence = 0.75;
-    } else if (/(?:unfortunately|regret|not.*moving|not.*selected|rejected|rejection|not moving forward)/i.test(fullText)) {
-      eventType = "rejection";
-      eventConfidence = 0.75;
-    } else if (/(?:received.*application|application.*received|thank.*applied|we.{0,10}received|application submitted)/i.test(fullText)) {
-      eventType = "applied";
-      eventConfidence = 0.65;
-    }
+    const classifiedEvent = classifyRecruitmentEvent(subject, from, body);
+    const eventType = classifiedEvent.type;
+    const eventConfidence = classifiedEvent.confidence;
 
     // ─── Company Name (Enhanced) ───
     let company: string | undefined;
@@ -148,9 +132,10 @@ export class GenericParser implements PlatformParser {
     }
 
     // ─── Interview Details (Enhanced with new extractors) ───
+    const explicitDate = extractExplicitDate(fullText);
     const dateExtraction = eventType === "interview"
-      ? extractDateTime(body, { sentDate: new Date() })
-      : { confidence: 0 };
+      ? extractDateTime(body, { sentDate: explicitDate || new Date() })
+      : { confidence: 0, date: explicitDate, time: undefined, timezone: undefined };
 
     const links = extractInterviewLinks(body);
     const primaryLink = selectPrimaryInterviewLink(links);

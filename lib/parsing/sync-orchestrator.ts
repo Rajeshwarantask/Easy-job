@@ -88,6 +88,7 @@ export async function processSingleEmail(
     threadId: string;
     payload?: GmailMessagePart;
     snippet?: string;
+    internalDate?: string;
   },
   mappingContext: MappingContext,
   options: {
@@ -251,7 +252,11 @@ export async function processSingleEmail(
         from: decoded.headers.from,
         to: decoded.headers.to,
         subject: decoded.headers.subject,
-        date: decoded.headers.date,
+        date: gmailMessage.internalDate
+          ? new Date(Number(gmailMessage.internalDate))
+          : decoded.headers.date,
+        internalDate: gmailMessage.internalDate,
+        dateHeader: decoded.headers.date?.toISOString(),
         bodyText,
       },
 
