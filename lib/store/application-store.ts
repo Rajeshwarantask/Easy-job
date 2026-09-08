@@ -31,11 +31,22 @@ const PARSER_VERSION = "1.0.0";
 
 function compactApplication(application: ParsedApplication): ParsedApplication {
   const compact = { ...application } as ParsedApplication & Record<string, unknown>;
-  delete compact.originalEmail;
   delete compact.parserApplication;
   delete compact.rawEmail;
   delete compact.bodyText;
   delete compact.emailBody;
+  if (compact.originalEmail && typeof compact.originalEmail === "object") {
+    const email = compact.originalEmail as Record<string, unknown>;
+    compact.originalEmail = {
+      gmailMessageId: email.gmailMessageId,
+      gmailThreadId: email.gmailThreadId,
+      subject: email.subject,
+      from: email.from,
+      date: email.date,
+      internalDate: email.internalDate,
+      dateHeader: email.dateHeader,
+    } as ParsedApplication["originalEmail"];
+  }
   return compact;
 }
 

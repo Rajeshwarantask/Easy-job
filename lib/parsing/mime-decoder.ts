@@ -74,6 +74,25 @@ function decodeBase64(data: string): string {
 /**
  * Recursively extract plaintext from a message part (prefers text/plain).
  */
+function htmlToPlaintext(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<\/p\s*>|<\/div\s*>|<\/li\s*>|<\/tr\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function extractPlaintextBody(part: GmailMessagePart | undefined): string {
   if (!part) return "";
 
@@ -82,6 +101,9 @@ function extractPlaintextBody(part: GmailMessagePart | undefined): string {
     const decoded = decodeBase64(part.body.data);
     if (part.mimeType === "text/plain") {
       return decoded;
+    }
+    if (part.mimeType === "text/html") {
+      return htmlToPlaintext(decoded);
     }
     // Skip non-text types
     if (!part.mimeType?.startsWith("text/")) {
@@ -127,7 +149,7 @@ function extractHtmlBody(part: GmailMessagePart | undefined): string {
   if (part.body?.data) {
     const decoded = decodeBase64(part.body.data);
     if (part.mimeType === "text/html") {
-      return decoded;
+      return htmlToPlaintext(decoded);
     }
   }
 
