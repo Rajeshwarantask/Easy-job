@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Empty } from "@/components/ui/empty";
 import type { ParsedApplication, ApplicationStatus } from "@/lib/types";
 import { getApplicationId } from "@/lib/parsing/application-accessors";
+import { ApplicationStore } from "@/lib/store/application-store";
 
 const CACHE_KEY = "jobtrail:cache";
 const statuses: ApplicationStatus[] = ["applied", "assessment", "interview", "offer", "rejected", "withdrawn"];
@@ -25,7 +26,7 @@ export default function ApplicationsPage() {
   const selectedStatus = params.get("status") as ApplicationStatus | null;
   const load = () => setApplications(readCache()?.applications || []);
   useEffect(() => { load(); window.addEventListener("applications-updated", load); return () => window.removeEventListener("applications-updated", load); }, []);
-  const sync = async () => { setSyncing(true); setError(null); try { const res = await fetch("/api/parsing/sync", { method: "POST" }); const result = await res.json(); if (!res.ok) throw new Error(result.error || "Sync failed"); sessionStorage.setItem(CACHE_KEY, JSON.stringify({ version: 1, applications: result.applications || [], lastSync: new Date().toISOString(), syncDurationMs: result.syncDurationMs || 0 })); window.dispatchEvent(new Event("applications-updated")); } catch (value) { setError(value instanceof Error ? value.message : "Sync failed"); } finally { setSyncing(false); } };
+  const sync = async () => { setSyncing(true); setError(null); try { const res = await fetch("/api/parsing/sync", { method: "POST" }); const result = await res.json(); if (!res.ok) throw new Error(result.error || "Sync failed"); ApplicationStore.write({ version: 1, applications: result.applications || [], lastSync: new Date().toISOString(), parserVersion: "1.0.0", processed: result.processed || 0, syncDurationMs: result.syncDurationMs || 0 }); window.dispatchEvent(new Event("applications-updated")); } catch (value) { setError(value instanceof Error ? value.message : "Sync failed"); } finally { setSyncing(false); } };
   const filtered = useMemo(() => applications.filter((app) => { const matchesStatus = !selectedStatus || app.status === selectedStatus; const haystack = `${app.company} ${app.role} ${app.location}`.toLowerCase(); return matchesStatus && haystack.includes(query.toLowerCase()); }), [applications, query, selectedStatus]);
   const setStatus = (status?: ApplicationStatus) => { const next = new URLSearchParams(params.toString()); if (status) next.set("status", status); else next.delete("status"); router.push(`/dashboard/applications${next.toString() ? `?${next}` : ""}`); };
 
