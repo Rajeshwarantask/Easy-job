@@ -1,5 +1,35 @@
 const PLACEHOLDERS = /^(?:unknown|n\/a|na|none|null|undefined|untitled(?: role| job)?|company|employer|the company|your company|job|position|role|opportunity|opening)$/i;
 const ATS_DOMAINS = /(?:indeed|linkedin|greenhouse|lever|workday|ashby|smartrecruiters|icims|jobvite|oracle|successfactors|mail|noreply)/i;
+const GENERIC_COMPANY_NAMES = /^(?:careers?|career portal|hr|recruit(?:ing|ment)?|talent|people|jobs?|job alerts?|messages?|notifications?|noreply|no[- ]?reply|linkedin|indeed|hiring team|recruitment team|the team|company|employer)$/i;
+const GENERIC_ROLE_TEXT = /^(?:more success|your update|update|view job|apply with resume|emails?|notification emails?|your application|application|status of your|remote role|job|position|role|opportunity|opening)$/i;
+
+export function isValidCompanyCandidate(value?: string | null): boolean {
+  const normalized = normalizeExtractedValue(value);
+  return Boolean(normalized && normalized.length <= 80 && !GENERIC_COMPANY_NAMES.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 8 && !/\b(?:thank you|we have|your application|this email|please|would like|has been|was received)\b/i.test(normalized));
+}
+
+export function isValidRoleCandidate(value?: string | null): boolean {
+  const normalized = normalizeExtractedValue(value);
+  return Boolean(normalized && normalized.length >= 3 && normalized.length <= 100 && !GENERIC_ROLE_TEXT.test(normalized) && !/[.!?]$/.test(normalized) && !/\b(?:view job|apply with resume|more success|your update|notification emails?)\b/i.test(normalized));
+}
+
+function cleanRoleCandidate(value?: string): string | undefined {
+  if (!isValidRoleCandidate(value)) return undefined;
+  return normalizeExtractedValue(value
+    ?.replace(/^at\s+/i, "")
+    ?.replace(/\b(?:view job|apply with resume|view now|learn more)\b.*$/i, "")
+    .replace(/\s+[-–—|]\s+\w{3,40}\s+(?:Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|India|Remote).*$/i, "")
+    .replace(/\s+(?:Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|India|Remote)$/i, "")
+    .replace(/\s+(?:role|position|job|opening)$/i, "")
+    .replace(/^application\s+update\s*:?\s*/i, "")
+    .replace(/\s+-\s+\d{3,}$/i, "")
+    .replace(/\s+\(?(?:req|job|requisition|id)\s*[:#-]?\s*[A-Z0-9-]+\)?$/i, ""));
+}
+
+function cleanCompanyCandidate(value?: string): string | undefined {
+  const normalized = normalizeExtractedValue(value);
+  return isValidCompanyCandidate(normalized) ? normalized : undefined;
+}
 
 export function normalizeExtractedValue(value?: string | null): string | undefined {
   const normalized = value?.replace(/\s+/g, " ").replace(/[|•]+/g, " ").trim();
@@ -26,6 +56,7 @@ function titleFromSubject(subject: string): string | undefined {
     .replace(/\b(?:application|interview|assessment|offer|rejection|update|status)\b/gi, "")
     .replace(/\b(?:your|the)\b/gi, "")
     .replace(/\b(?:unfortunately|an update|update)\b/gi, "")
+    .replace(/^\s*(?:,|on|for)\s+/i, "")
     .replace(/[|:[\](){}]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -41,9 +72,32 @@ function companyFromDomain(domain?: string): string | undefined {
 export interface DeterministicFallbacks {
   company?: string;
   role?: string;
+  location?: string;
   jobUrl?: string;
   careerPortalUrl?: string;
   source?: string;
+  companySource?: string;
+  roleSource?: string;
+}
+
+export function extractPlatformFields(from: string, subject: string, body: string): DeterministicFallbacks {
+  const text = `${subject}\n${body}`;
+  const isLinkedIn = /linkedin/i.test(from) || /linkedin/i.test(text);
+  const isIndeed = /indeed/i.test(from) || /indeed/i.test(text);
+  const links = [...text.matchAll(/https?:\/\/[^\s<>"')]+/gi)].map((match) => match[0].replace(/[.,;]+$/, ""));
+  if (isLinkedIn) {
+    const sourceLine = text.match(/(?:job alert|new job|job notification|more success|successfully applied|view job)\s*[:|-]?\s*([^\n]+)/i)?.[1] || text.match(/\b([A-Z][A-Za-z+.#/& -]{2,60})\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/i)?.[0] || text.match(/\b([A-Z][A-Za-z+.#/& -]{2,60})\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(?:View job|Apply with resume)\b/i)?.[0] || text.match(/\b(Full Stack Developer|MERN Stack Developer|Frontend Developer|Full Stack Engineer|Software Engineer|Junior Software Engineer|Developer Internship|Graduate Engineer|Application Engineer)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/i)?.[0];
+    const match = sourceLine?.match(/^(.+?)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote|View job|Apply with resume)\b/i) || sourceLine?.match(/^(.+?)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(?:View job|Apply with resume)\b/i) || text.match(/^(Full Stack Developer|MERN Stack Developer|Frontend Developer|Full Stack Engineer|Software Engineer|Junior Software Engineer|Developer Internship|Graduate Engineer|Application Engineer)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/im);
+    if (match) return { role: cleanRoleCandidate(match[1]), company: cleanCompanyCandidate(match[2]), location: match[3], jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: "linkedin-notification", companySource: "linkedin-notification" };
+    const explicit = text.match(/(?:position|role|job title)\s*[:\-]\s*([^\n|]+)/i)?.[1];
+    return { role: cleanRoleCandidate(explicit), jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: explicit ? "linkedin-body" : undefined };
+  }
+  if (isIndeed) {
+    const role = text.match(/(?:job title|job|position|role)\s*[:\-]\s*([^\n|]+)/i)?.[1] || subject.match(/(?:application|applied|your application)\s+(?:for|to)\s+(.+)/i)?.[1];
+    const company = text.match(/(?:company|employer|hiring company)\s*[:\-]\s*([^\n|]+)/i)?.[1] || text.match(/(?:at|with)\s+([A-Z][A-Za-z0-9&.' -]{2,60})(?=\s+(?:for|as|in)\b|[.,\n]|$)/i)?.[1];
+    return { role: cleanRoleCandidate(role), company: cleanCompanyCandidate(company), jobUrl: links.find((link) => /indeed\./i.test(link)), source: "indeed-template", roleSource: role ? "indeed-body-or-subject" : undefined, companySource: company ? "indeed-body" : undefined };
+  }
+  return {};
 }
 
 export function extractDeterministicFallbacks(from: string, subject: string, body: string): DeterministicFallbacks {
@@ -52,17 +106,18 @@ export function extractDeterministicFallbacks(from: string, subject: string, bod
   const links = [...text.matchAll(/https?:\/\/[^\s<>"')]+/gi)].map((match) => match[0].replace(/[.,;]+$/, ""));
   const atsLink = links.find((link) => /(?:job|career|careers|apply|requisition|greenhouse|lever|workday|ashby|smartrecruiters|icims|jobvite)/i.test(link));
 
-  const labeledRole = text.match(/(?:job title|position|role|job|opening)\s*[:\-]?\s*([^\n|,]{4,100}?)(?=\s+(?:at|with|for|was|is|has)\b|[.,\n|]|$)/i)?.[1];
+  const labeledRole = text.match(/(?:job title|position|role|job|opening)\s*[:\-]?\s*([^\n|,]{4,100}?)(?=\s+(?:at|with|for|was|is|has)\b|[.,\n|]|$)/i)?.[1]
+    || text.match(/application\s+for\s+(?:the\s+)?(.+?)\s+role\s+at\b/i)?.[1]
+    || text.match(/(?:application\s+(?:update|received)|application)\s*[:\-]?\s*(?:for\s+)?(.+?)(?=\s+was\s+received|\s+role\s+at\s+|\s+at\s+|$)/i)?.[1];
   const labeledCompany = text.match(/(?:company|employer|organization)\s*[:\-]\s*([^\n|,]{2,80})/i)?.[1];
   const atCompany = text.match(/\b(?:at|with|from)\s+([A-Z][A-Za-z0-9&.'-]{1,50}(?:\s+[A-Z][A-Za-z0-9&.'-]{1,50}){0,4}?)(?=\s+(?:was|is|has|for|on|and|received|position|role)\b|[.,\n]|$)/i)?.[1];
   const forRole = text.match(/\bfor\s+(?:the\s+)?(?:position|role|job)?\s*(?:of\s+)?([A-Z][^\n,|.]{3,80})/i)?.[1];
 
-  const company = normalizeExtractedValue(labeledCompany) || senderName(from) || companyFromDomain(domain) || normalizeExtractedValue(atCompany);
-  const cleanRole = (value?: string) => {
-    if (!value || /^\s*at\s+/i.test(value)) return undefined;
-    return normalizeExtractedValue(value.split(/\s+at\s+/i)[0].replace(/\s+(?:role|position|job|opening)$/i, ""));
-  };
-  const role = cleanRole(labeledRole) || cleanRole(forRole) || titleFromSubject(subject);
+  const company = cleanCompanyCandidate(labeledCompany) || companyFromDomain(domain) || cleanCompanyCandidate(atCompany);
+  const subjectRole = cleanRoleCandidate(titleFromSubject(subject));
+  const explicitRole = cleanRoleCandidate(text.match(/application\s+for\s+(?:the\s+)?(.+?)\s+role\s+at\b/i)?.[1]) || cleanRoleCandidate(labeledRole) || cleanRoleCandidate(forRole);
+  const applicationRole = cleanRoleCandidate(text.match(/application\s+update:\s*(.+?)(?=\s+was\s+received|\s+role\s+at\s+|\s+at\s+|$)/i)?.[1]);
+  const role = explicitRole || applicationRole || (subjectRole && !/^(?:an on|an update|your application|application|status of your)$/i.test(subjectRole) ? subjectRole : undefined);
 
   return {
     company,

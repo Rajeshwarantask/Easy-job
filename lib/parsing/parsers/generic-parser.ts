@@ -23,7 +23,7 @@ import {
   hasInterviewSchedulingContent,
 } from "../field-extractors/interview-link-extractor";
 import { extractSalary } from "../field-extractors/salary-extractor";
-import { classifyRecruitmentEvent, extractDeterministicFallbacks, extractExplicitDate, normalizeExtractedValue } from "../deterministic-fallbacks";
+import { classifyRecruitmentEvent, extractDeterministicFallbacks, extractExplicitDate, extractPlatformFields, isValidCompanyCandidate, isValidRoleCandidate, normalizeExtractedValue } from "../deterministic-fallbacks";
 
 export class GenericParser implements PlatformParser {
   platformId = "generic";
@@ -176,10 +176,22 @@ export class GenericParser implements PlatformParser {
       }
     }
 
-    // Deterministic fallbacks keep status/rejection emails useful without AI.
+    // Deterministic platform rules run before generic heuristics to avoid template garbage.
+    const platformFields = extractPlatformFields(from, subject, body);
     const fallback = extractDeterministicFallbacks(from, subject, body);
-    company = normalizeExtractedValue(company) || fallback.company;
-    role = normalizeExtractedValue(role) || fallback.role;
+    company = (isValidCompanyCandidate(platformFields.company) ? platformFields.company : undefined)
+      || (isValidCompanyCandidate(company) ? normalizeExtractedValue(company) : undefined)
+      || fallback.company;
+    role = (isValidRoleCandidate(platformFields.role) ? platformFields.role : undefined)
+      || (isValidRoleCandidate(role) ? normalizeExtractedValue(role) : undefined)
+      || fallback.role;
+    if (platformFields.location && !location) location = platformFields.location;
+    const extractionSources = [
+      platformFields.companySource && `company:${platformFields.companySource}`,
+      platformFields.roleSource && `role:${platformFields.roleSource}`,
+      fallback.company && !platformFields.company ? `company:${fallback.companySource || fallback.source}` : undefined,
+      fallback.role && !platformFields.role ? `role:${fallback.roleSource || fallback.source}` : undefined,
+    ].filter(Boolean) as string[];
     if (!jobUrl) jobUrl = fallback.jobUrl;
     if (!careerPortalUrl) careerPortalUrl = fallback.careerPortalUrl;
     if (company && companyConfidence === 0) companyConfidence = 0.42;
@@ -230,6 +242,8 @@ export class GenericParser implements PlatformParser {
         }),
       },
       atsFields: {},
+      rawPatternMatches: Object.fromEntries(extractionSources.map((source) => [source, source])),
+      processingNotes: extractionSources,
       jobUrl,
       careerPortalUrl,
       parserConfidence,
