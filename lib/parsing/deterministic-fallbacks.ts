@@ -1,16 +1,17 @@
 const PLACEHOLDERS = /^(?:unknown|n\/a|na|none|null|undefined|untitled(?: role| job)?|company|employer|the company|your company|job|position|role|opportunity|opening)$/i;
 const ATS_DOMAINS = /(?:indeed|linkedin|greenhouse|lever|workday|ashby|smartrecruiters|icims|jobvite|oracle|successfactors|mail|noreply)/i;
-const GENERIC_COMPANY_NAMES = /^(?:careers?|career portal|hr|recruit(?:ing|ment)?|talent|people|jobs?|job alerts?|messages?|notifications?|noreply|no[- ]?reply|linkedin|indeed|hiring team|recruitment team|the team|company|employer)$/i;
-const GENERIC_ROLE_TEXT = /^(?:more success|your update|update|view job|apply with resume|emails?|notification emails?|your application|application|status of your|remote role|job|position|role|opportunity|opening)$/i;
+const GENERIC_COMPANY_NAMES = /^(?:careers?|career portal|hr|recruit(?:ing|ment)?|talent|people|jobs?|job alerts?|messages?|notifications?|noreply|no[- ]?reply|linkedin|indeed|eightfold|workday|greenhouse|lever|ashby|smartrecruiters|icims|jobvite|oracle|successfactors|hiring team|recruitment team|the team|company|employer)$/i;
+const GENERIC_ROLE_TEXT = /^(?:more success|your update|update|view job|apply(?: with resume| now)?|emails?|notification emails?|your application(?:\s+to)?|application(?: received)?|status of your|remote role|job|position|role|opportunity|opening|applying to(?: the)?|with the|at linkedin)$/i;
+const ACTION_ROLE_TEXT = /^(?:applying|apply|applied|applying to|your|the|with|at|for|to|from|on|received|submitted|notification|update|status)\b/i;
 
 export function isValidCompanyCandidate(value?: string | null): boolean {
   const normalized = normalizeExtractedValue(value);
-  return Boolean(normalized && normalized.length <= 80 && !GENERIC_COMPANY_NAMES.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 8 && !/\b(?:thank you|we have|your application|this email|please|would like|has been|was received)\b/i.test(normalized));
+  return Boolean(normalized && normalized.length <= 80 && !GENERIC_COMPANY_NAMES.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 8 && !/\b(?:thank you|we have|your application|this email|please|would like|has been|was received|with the|applying to)\b/i.test(normalized));
 }
 
 export function isValidRoleCandidate(value?: string | null): boolean {
   const normalized = normalizeExtractedValue(value);
-  return Boolean(normalized && normalized.length >= 3 && normalized.length <= 100 && !GENERIC_ROLE_TEXT.test(normalized) && !/[.!?]$/.test(normalized) && !/\b(?:view job|apply with resume|more success|your update|notification emails?)\b/i.test(normalized));
+  return Boolean(normalized && normalized.length >= 3 && normalized.length <= 100 && !GENERIC_ROLE_TEXT.test(normalized) && !ACTION_ROLE_TEXT.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 9 && !/\b(?:view job|apply with resume|more success|your update|notification emails?|application received|thank you|we have)\b/i.test(normalized));
 }
 
 function cleanRoleCandidate(value?: string): string | undefined {
@@ -93,8 +94,12 @@ export function extractPlatformFields(from: string, subject: string, body: strin
     return { role: cleanRoleCandidate(explicit), jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: explicit ? "linkedin-body" : undefined };
   }
   if (isIndeed) {
-    const role = text.match(/(?:job title|job|position|role)\s*[:\-]\s*([^\n|]+)/i)?.[1] || subject.match(/(?:application|applied|your application)\s+(?:for|to)\s+(.+)/i)?.[1];
-    const company = text.match(/(?:company|employer|hiring company)\s*[:\-]\s*([^\n|]+)/i)?.[1] || text.match(/(?:at|with)\s+([A-Z][A-Za-z0-9&.' -]{2,60})(?=\s+(?:for|as|in)\b|[.,\n]|$)/i)?.[1];
+    const role = text.match(/(?:job title|job|position|role)\s*[:\-]\s*([^\n|]+)/i)?.[1]
+      || text.match(/(?:applying to|application for|applied for|your application for)\s+(?:the\s+)?(.+?)\s+role\s+at\b/i)?.[1]
+      || subject.match(/(?:application|applied|your application)\s+(?:for|to)\s+(.+)/i)?.[1];
+    const company = text.match(/(?:company|employer|hiring company)\s*[:\-]\s*([^\n|]+)/i)?.[1]
+      || text.match(/\b(?:role|position|job)\s+at\s+([A-Z][A-Za-z0-9&.' -]{2,60})(?=\s+(?:was|is|has|for|as|in)\b|[.,\n]|$)/i)?.[1]
+      || text.match(/(?:at|with)\s+([A-Z][A-Za-z0-9&.' -]{2,60})(?=\s+(?:for|as|in)\b|[.,\n]|$)/i)?.[1];
     return { role: cleanRoleCandidate(role), company: cleanCompanyCandidate(company), jobUrl: links.find((link) => /indeed\./i.test(link)), source: "indeed-template", roleSource: role ? "indeed-body-or-subject" : undefined, companySource: company ? "indeed-body" : undefined };
   }
   return {};
