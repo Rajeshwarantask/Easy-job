@@ -15,8 +15,7 @@ export function isValidRoleCandidate(value?: string | null): boolean {
 }
 
 function cleanRoleCandidate(value?: string): string | undefined {
-  if (!isValidRoleCandidate(value)) return undefined;
-  return normalizeExtractedValue(value
+  const cleaned = normalizeExtractedValue(value
     ?.replace(/^at\s+/i, "")
     ?.replace(/\b(?:view job|apply with resume|view now|learn more)\b.*$/i, "")
     .replace(/\s+[-–—|]\s+\w{3,40}\s+(?:Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|India|Remote).*$/i, "")
@@ -25,6 +24,7 @@ function cleanRoleCandidate(value?: string): string | undefined {
     .replace(/^application\s+update\s*:?\s*/i, "")
     .replace(/\s+-\s+\d{3,}$/i, "")
     .replace(/\s+\(?(?:req|job|requisition|id)\s*[:#-]?\s*[A-Z0-9-]+\)?$/i, ""));
+  return isValidRoleCandidate(cleaned) ? cleaned : undefined;
 }
 
 function cleanCompanyCandidate(value?: string): string | undefined {
@@ -65,14 +65,20 @@ function titleFromSubject(subject: string): string | undefined {
 }
 
 function companyFromDomain(domain?: string): string | undefined {
-  if (!domain || ATS_DOMAINS.test(domain)) return undefined;
-  const label = domain.split(".")[0].replace(/[-_]+/g, " ");
-  return normalizeExtractedValue(label.replace(/\b\w/g, (c) => c.toUpperCase()));
+  if (!domain) return undefined;
+  const host = domain.toLowerCase().replace(/^mail\./, "");
+  const knownPlatform = /(?:^|\.)(?:indeed|linkedin|greenhouse|lever|workday|ashbyhq|smartrecruiters|icims|jobvite|oraclecloud|successfactors)\.(?:com|io|co|net)$/i.test(host);
+  if (knownPlatform || /(?:noreply|notifications?|jobalerts?)/i.test(host.split(".")[0])) return undefined;
+  const label = host.split(".")[0].replace(/[-_]+/g, " ");
+  const company = normalizeExtractedValue(label.replace(/\b\w/g, (c) => c.toUpperCase()));
+  return cleanCompanyCandidate(company);
 }
 
 export interface DeterministicFallbacks {
   company?: string;
+  parentCompany?: string;
   role?: string;
+  requisitionId?: string;
   location?: string;
   jobUrl?: string;
   careerPortalUrl?: string;
@@ -83,13 +89,14 @@ export interface DeterministicFallbacks {
 
 export function extractPlatformFields(from: string, subject: string, body: string): DeterministicFallbacks {
   const text = `${subject}\n${body}`;
+  const requisitionId = text.match(/\b((?:R-?\d{5,}|RQ\d{5,}|\d{7,}))\b/i)?.[1];
   const isLinkedIn = /linkedin/i.test(from) || /linkedin/i.test(text);
   const isIndeed = /indeed/i.test(from) || /indeed/i.test(text);
   const links = [...text.matchAll(/https?:\/\/[^\s<>"')]+/gi)].map((match) => match[0].replace(/[.,;]+$/, ""));
   if (isLinkedIn) {
-    const sourceLine = text.match(/(?:job alert|new job|job notification|more success|successfully applied|view job)\s*[:|-]?\s*([^\n]+)/i)?.[1] || text.match(/\b([A-Z][A-Za-z+.#/& -]{2,60})\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/i)?.[0] || text.match(/\b([A-Z][A-Za-z+.#/& -]{2,60})\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(?:View job|Apply with resume)\b/i)?.[0] || text.match(/\b(Full Stack Developer|MERN Stack Developer|Frontend Developer|Full Stack Engineer|Software Engineer|Junior Software Engineer|Developer Internship|Graduate Engineer|Application Engineer)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/i)?.[0];
-    const match = sourceLine?.match(/^(.+?)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote|View job|Apply with resume)\b/i) || sourceLine?.match(/^(.+?)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(?:View job|Apply with resume)\b/i) || text.match(/^(Full Stack Developer|MERN Stack Developer|Frontend Developer|Full Stack Engineer|Software Engineer|Junior Software Engineer|Developer Internship|Graduate Engineer|Application Engineer)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/im);
-    if (match) return { role: cleanRoleCandidate(match[1]), company: cleanCompanyCandidate(match[2]), location: match[3], jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: "linkedin-notification", companySource: "linkedin-notification" };
+    const sourceLine = body.split(/\n+/).map((line) => line.replace(/\s+(?:view job|apply with resume)\b.*$/i, "").trim()).find((line) => /\s/.test(line)) || text.match(/(?:job alert|new job|job notification|successfully applied|view job)\s*[:|-]?\s*([^\n]+)/i)?.[1]?.replace(/\s+(?:view job|apply with resume)\b.*$/i, "") || text.match(/\b([A-Z][A-Za-z+.#/& -]{2,80})\s+([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*){0,4})\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}|Remote)\b/i)?.[0] || text.match(/\b([A-Z][A-Za-z+.#/& -]{2,80})\s+([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*){0,4})\s+(?:View job|Apply with resume)\b/i)?.[0];
+    const match = sourceLine?.match(/^(.+\b(?:developer|engineer|designer|analyst|manager|intern|scientist|specialist|lead|architect))\s+([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*){0,4})\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}|Remote|View job|Apply with resume)\b/i) || sourceLine?.match(/^(.+?)\s+([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*){0,4})\s+(?:View job|Apply with resume)\b/i);
+    if (match) return { role: cleanRoleCandidate(match[1]), company: cleanCompanyCandidate(match[2]), location: match[3] && !/^(?:View job|Apply with resume)$/i.test(match[3]) ? match[3] : undefined, jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: "linkedin-notification", companySource: "linkedin-notification" };
     const explicit = text.match(/(?:position|role|job title)\s*[:\-]\s*([^\n|]+)/i)?.[1];
     return { role: cleanRoleCandidate(explicit), jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: explicit ? "linkedin-body" : undefined };
   }
@@ -102,7 +109,7 @@ export function extractPlatformFields(from: string, subject: string, body: strin
       || text.match(/(?:at|with)\s+([A-Z][A-Za-z0-9&.' -]{2,60})(?=\s+(?:for|as|in)\b|[.,\n]|$)/i)?.[1];
     return { role: cleanRoleCandidate(role), company: cleanCompanyCandidate(company), jobUrl: links.find((link) => /indeed\./i.test(link)), source: "indeed-template", roleSource: role ? "indeed-body-or-subject" : undefined, companySource: company ? "indeed-body" : undefined };
   }
-  return {};
+  return { requisitionId };
 }
 
 export function extractDeterministicFallbacks(from: string, subject: string, body: string): DeterministicFallbacks {
@@ -137,12 +144,14 @@ export type RecruitmentEventType = "applied" | "assessment" | "interview" | "off
 
 export function classifyRecruitmentEvent(subject: string, from: string, body: string): { type: RecruitmentEventType; confidence: number } {
   const text = `${subject}\n${from}\n${body}`;
-  const negative = /(?:not selected|not moving forward|move forward with other|regret to inform|unfortunately|withdrawn|withdrawal|application closed|position has been filled)/i;
-  if (/(?:withdrawn|withdrawal|application closed)/i.test(text)) return { type: "rejection", confidence: 0.95 };
-  if (negative.test(text)) return { type: "rejection", confidence: 0.92 };
-  if (/(?:offer|congratulations|pleased to offer|compensation package|offer letter)/i.test(text)) return { type: "offer", confidence: 0.94 };
-  if (/(?:interview|phone screen|video call|onsite|hiring manager|schedule.*call|meet with)/i.test(text)) return { type: "interview", confidence: 0.9 };
-  if (/(?:assessment|coding challenge|technical test|questionnaire|take-home|hackerrank|codility)/i.test(text)) return { type: "assessment", confidence: 0.9 };
+  const currentRejection = /(?:will not be (?:moving forward|pursuing)|decided not to (?:progress|move forward)|proceed with other candidates|move forward with other candidates|wasn['’]?t selected|did not select you|position (?:has been|is) filled|role is no longer available|application (?:has been )?rejected|not selected for (?:the )?(?:next|further) round)/i;
+  const conditionalRejection = /(?:if you (?:do not|don't) receive|may not be selected|in the event that you do not|should you not be selected|candidates shortlisted based on)/i;
+  if (/(?:withdrawn|withdrawal|application closed)/i.test(text)) return { type: "rejection", confidence: 0.98 };
+  if (currentRejection.test(text) && !conditionalRejection.test(text)) return { type: "rejection", confidence: 0.98 };
+  if (/(?:offer|pleased to offer|compensation package|offer letter)/i.test(text) && !/offer.*(?:information|update|not available)/i.test(text)) return { type: "offer", confidence: 0.96 };
+  if (/(?:microsoft teams|zoom|google meet|meeting id|calendar event|schedule a discussion|next step in the selection process|interview scheduled|interview invitation)/i.test(text)) return { type: "interview", confidence: 0.97 };
+  if (/(?:assessment date|assessment window|assessment duration|coding (?:test|assessment)|aptitude|hackerearth|hackerrank|codility|test center|assessment guidelines|eligible to take part)/i.test(text)) return { type: "assessment", confidence: 0.96 };
+  if (/(?:shortlisted|selected for the next round|selected to proceed|eligible to (?:participate|continue|take part))/i.test(text)) return { type: "update", confidence: 0.9 };
   if (/(?:application received|received your application|thank you for applying|application submitted|applied for)/i.test(text)) return { type: "applied", confidence: 0.86 };
   return { type: "update", confidence: 0.35 };
 }
