@@ -82,6 +82,7 @@ export class GenericParser implements PlatformParser {
 
     // ─── Role (Enhanced) ───
     let role: string | undefined;
+    let requisitionId: string | undefined;
     let roleConfidence = 0;
 
     const rolePatterns = [
@@ -186,6 +187,7 @@ export class GenericParser implements PlatformParser {
       || (isValidRoleCandidate(fallback.role) ? fallback.role : undefined)
       || (isValidRoleCandidate(role) ? normalizeExtractedValue(role) : undefined);
     if (platformFields.location && !location) location = platformFields.location;
+    if (platformFields.requisitionId) requisitionId = platformFields.requisitionId;
     const extractionSources = [
       platformFields.companySource && `company:${platformFields.companySource}`,
       platformFields.roleSource && `role:${platformFields.roleSource}`,
@@ -241,7 +243,7 @@ export class GenericParser implements PlatformParser {
           salaryCurrency: { value: salaryExtraction.currency, confidence: 0.95 },
         }),
       },
-      atsFields: {},
+      atsFields: { requisitionId },
       rawPatternMatches: Object.fromEntries(extractionSources.map((source) => [source, source])),
       processingNotes: extractionSources,
       jobUrl,
