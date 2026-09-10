@@ -73,7 +73,7 @@ export class GenericParser implements PlatformParser {
       if (domainMatch?.[1]) {
         const domain = domainMatch[1];
         // Skip known ATS domains
-        if (!/workday|greenhouse|lever|ashby|indeed|noreply|mail/i.test(domain)) {
+        if (!/(?:^|\.)?(?:workday|greenhouse|lever|ashbyhq|indeed|linkedin|smartrecruiters|icims|jobvite|oraclecloud|successfactors)\.(?:com|io|co|net)$|noreply|jobalerts?|notifications?/i.test(domain)) {
           company = domain.split(".")[0];
           companyConfidence = 0.45;
         }

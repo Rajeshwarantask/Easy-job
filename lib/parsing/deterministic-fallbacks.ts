@@ -15,8 +15,7 @@ export function isValidRoleCandidate(value?: string | null): boolean {
 }
 
 function cleanRoleCandidate(value?: string): string | undefined {
-  if (!isValidRoleCandidate(value)) return undefined;
-  return normalizeExtractedValue(value
+  const cleaned = normalizeExtractedValue(value
     ?.replace(/^at\s+/i, "")
     ?.replace(/\b(?:view job|apply with resume|view now|learn more)\b.*$/i, "")
     .replace(/\s+[-–—|]\s+\w{3,40}\s+(?:Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|India|Remote).*$/i, "")
@@ -25,6 +24,7 @@ function cleanRoleCandidate(value?: string): string | undefined {
     .replace(/^application\s+update\s*:?\s*/i, "")
     .replace(/\s+-\s+\d{3,}$/i, "")
     .replace(/\s+\(?(?:req|job|requisition|id)\s*[:#-]?\s*[A-Z0-9-]+\)?$/i, ""));
+  return isValidRoleCandidate(cleaned) ? cleaned : undefined;
 }
 
 function cleanCompanyCandidate(value?: string): string | undefined {
@@ -65,9 +65,13 @@ function titleFromSubject(subject: string): string | undefined {
 }
 
 function companyFromDomain(domain?: string): string | undefined {
-  if (!domain || ATS_DOMAINS.test(domain)) return undefined;
-  const label = domain.split(".")[0].replace(/[-_]+/g, " ");
-  return normalizeExtractedValue(label.replace(/\b\w/g, (c) => c.toUpperCase()));
+  if (!domain) return undefined;
+  const host = domain.toLowerCase().replace(/^mail\./, "");
+  const knownPlatform = /(?:^|\.)(?:indeed|linkedin|greenhouse|lever|workday|ashbyhq|smartrecruiters|icims|jobvite|oraclecloud|successfactors)\.(?:com|io|co|net)$/i.test(host);
+  if (knownPlatform || /(?:noreply|notifications?|jobalerts?)/i.test(host.split(".")[0])) return undefined;
+  const label = host.split(".")[0].replace(/[-_]+/g, " ");
+  const company = normalizeExtractedValue(label.replace(/\b\w/g, (c) => c.toUpperCase()));
+  return cleanCompanyCandidate(company);
 }
 
 export interface DeterministicFallbacks {
@@ -87,9 +91,11 @@ export function extractPlatformFields(from: string, subject: string, body: strin
   const isIndeed = /indeed/i.test(from) || /indeed/i.test(text);
   const links = [...text.matchAll(/https?:\/\/[^\s<>"')]+/gi)].map((match) => match[0].replace(/[.,;]+$/, ""));
   if (isLinkedIn) {
+    const knownRoleMatch = text.match(/\b(Junior Full Stack Developer|Full Stack Developer|MERN Stack Developer|Frontend Developer|Full Stack Engineer|Software Engineer|Junior Software Engineer|Developer Internship|Graduate Engineer|Application Engineer)\s+(.+?)\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/i);
+    if (knownRoleMatch) return { role: cleanRoleCandidate(knownRoleMatch[1]), company: cleanCompanyCandidate(knownRoleMatch[2]), location: knownRoleMatch[3], jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: "linkedin-notification", companySource: "linkedin-notification" };
     const sourceLine = text.match(/(?:job alert|new job|job notification|more success|successfully applied|view job)\s*[:|-]?\s*([^\n]+)/i)?.[1] || text.match(/\b([A-Z][A-Za-z+.#/& -]{2,60})\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/i)?.[0] || text.match(/\b([A-Z][A-Za-z+.#/& -]{2,60})\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(?:View job|Apply with resume)\b/i)?.[0] || text.match(/\b(Full Stack Developer|MERN Stack Developer|Frontend Developer|Full Stack Engineer|Software Engineer|Junior Software Engineer|Developer Internship|Graduate Engineer|Application Engineer)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/i)?.[0];
-    const match = sourceLine?.match(/^(.+?)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote|View job|Apply with resume)\b/i) || sourceLine?.match(/^(.+?)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(?:View job|Apply with resume)\b/i) || text.match(/^(Full Stack Developer|MERN Stack Developer|Frontend Developer|Full Stack Engineer|Software Engineer|Junior Software Engineer|Developer Internship|Graduate Engineer|Application Engineer)\s+([A-Z][A-Za-z0-9&.'-]{2,50})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/im);
-    if (match) return { role: cleanRoleCandidate(match[1]), company: cleanCompanyCandidate(match[2]), location: match[3], jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: "linkedin-notification", companySource: "linkedin-notification" };
+    const match = sourceLine?.match(/^(.+?)\s+([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*){0,4})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote|View job|Apply with resume)\b/i) || sourceLine?.match(/^(.+?)\s+([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*){0,4})\s+(?:View job|Apply with resume)\b/i) || text.match(/^(Full Stack Developer|MERN Stack Developer|Frontend Developer|Full Stack Engineer|Software Engineer|Junior Software Engineer|Developer Internship|Graduate Engineer|Application Engineer)\s+([A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*){0,4})\s+(Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Remote)\b/im);
+    if (match) return { role: cleanRoleCandidate(match[1]), company: cleanCompanyCandidate(match[2]), location: match[3] && !/^(?:View job|Apply with resume)$/i.test(match[3]) ? match[3] : undefined, jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: "linkedin-notification", companySource: "linkedin-notification" };
     const explicit = text.match(/(?:position|role|job title)\s*[:\-]\s*([^\n|]+)/i)?.[1];
     return { role: cleanRoleCandidate(explicit), jobUrl: links.find((link) => /linkedin\.com\/jobs/i.test(link)), source: "linkedin-template", roleSource: explicit ? "linkedin-body" : undefined };
   }
