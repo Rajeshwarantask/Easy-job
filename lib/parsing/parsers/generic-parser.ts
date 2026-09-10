@@ -86,17 +86,21 @@ export class GenericParser implements PlatformParser {
     let roleConfidence = 0;
 
     const rolePatterns = [
-      /for (?:the |a )?(?:position of |role of )?([^,.:\n]+)(?:\s+(?:position|role|job))?/i,
-      /(?:position|role|applied for|applied to|job title)\s*:?\s*([^,.:\n]{5,60})/i,
-      /^([A-Z][A-Za-z\s]+)\s+(?:position|role|job|opportunity)/i,
+      /(?:applying to|application for|applied for|your application for)\s+(?:the\s+)?(.+?)\s+(?:role|position|job)\s+at\b/i,
+      /for (?:the |a )?(?:position of |role of )?([^,.:\n]+?)(?=\s+(?:at|with|in|on)\b|\s+(?:position|role|job)\b|[,.\n]|$)/i,
+      /(?:position|role|applied for|applied to|job title)\s*:?\s*([^,.:\n]{5,80}?)(?=\s+(?:at|with|in|on)\b|[,.\n]|$)/i,
+      /^([A-Z][A-Za-z\s-]+?)\s+(?:position|role|job|opportunity)/i,
     ];
 
     for (const pattern of rolePatterns) {
       const match = fullText.match(pattern);
       if (match?.[1]) {
-        const candidate = match[1].trim();
-        // Skip if too generic
-        if (!/^(?:job|position|role|opportunity|opening)$/i.test(candidate) && candidate.length > 3) {
+        const candidate = match[1].trim()
+          .replace(/\s+(?:view job|apply with resume|apply now|learn more)\b.*$/i, "")
+          .replace(/\s+(?:bengaluru|bangalore|chennai|hyderabad|mumbai|delhi|pune|india|remote)$/i, "")
+          .trim();
+        // Keep only semantic role phrases, never notification actions or sentences.
+        if (!/^(?:job|position|role|opportunity|opening|application|your application|applying to|more success)$/i.test(candidate) && candidate.length > 3 && !/\b(?:view job|apply with resume|thank you|your application|we have)\b/i.test(candidate)) {
           role = candidate;
           roleConfidence = 0.65;
           break;
@@ -196,8 +200,8 @@ export class GenericParser implements PlatformParser {
     ].filter(Boolean) as string[];
     if (!jobUrl) jobUrl = fallback.jobUrl;
     if (!careerPortalUrl) careerPortalUrl = fallback.careerPortalUrl;
-    if (company && companyConfidence === 0) companyConfidence = 0.42;
-    if (role && roleConfidence === 0) roleConfidence = 0.42;
+    if (company && companyConfidence === 0) companyConfidence = platformFields.company ? 0.86 : fallback.company ? 0.72 : 0.42;
+    if (role && roleConfidence === 0) roleConfidence = platformFields.role ? 0.86 : fallback.role ? 0.72 : 0.42;
 
     // ─── Calculate Confidence ───
     const fieldsFound = [company, role, location, workMode].filter(Boolean).length;
