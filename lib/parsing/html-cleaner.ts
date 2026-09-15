@@ -25,10 +25,18 @@ export interface ExtractedLink {
 /**
  * Cleaned HTML output.
  */
+export interface StructuralBlock {
+  text: string;
+  tag: "heading" | "table-cell" | "link" | "paragraph" | "list-item" | "footer";
+  noise: number;
+}
+
 export interface CleanedHtml {
   plaintext: string;
   links: ExtractedLink[];
   cleanHtml: string;
+  blocks: StructuralBlock[];
+  structuredText: string;
 }
 
 /**
@@ -67,6 +75,24 @@ function extractLinks(html: string): ExtractedLink[] {
 /**
  * Decode HTML entities.
  */
+function extractStructuralBlocks(html: string): StructuralBlock[] {
+  const blocks: StructuralBlock[] = [];
+  const pattern = /<(h[1-6]|td|th|p|li|a|footer|header)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(html))) {
+    const text = decodeHtmlEntity(match[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+    if (!text || text.length < 2) continue;
+    const tag = match[1].toLowerCase();
+    const isNoise = /^(?:apply(?: now)?|view job(?: posting)?|learn more|see details|sign in|get started|unsubscribe|privacy policy|more success|your update)$/i.test(text);
+    blocks.push({
+      text,
+      tag: tag.startsWith("h") ? "heading" : tag === "td" || tag === "th" ? "table-cell" : tag === "a" ? "link" : tag === "li" ? "list-item" : tag === "footer" ? "footer" : "paragraph",
+      noise: isNoise || /unsubscribe|privacy|tracking|receiving this email/i.test(text) ? 1 : tag === "a" ? 0.65 : tag.startsWith("h") ? 0.05 : 0.2,
+    });
+  }
+  return blocks;
+}
+
 function decodeHtmlEntity(text: string): string {
   const entities: Record<string, string> = {
     "&nbsp;": " ",
@@ -158,6 +184,8 @@ export function cleanHtml(html: string): CleanedHtml {
       plaintext: "",
       links: [],
       cleanHtml: "",
+      blocks: [],
+      structuredText: "",
     };
   }
 
@@ -170,6 +198,12 @@ export function cleanHtml(html: string): CleanedHtml {
 
   // Step 3: Convert to plaintext
   const plaintext = htmlToPlaintext(cleaned);
+  const blocks = extractStructuralBlocks(cleaned);
+  const structuredText = blocks
+    .filter((block) => block.noise < 0.8)
+    .map((block) => block.text)
+    .filter((text, index, values) => values.indexOf(text) === index)
+    .join("\n");
 
   // Step 4: Create a safe HTML version (no scripts/styles/tracking)
   const cleanHtml = cleaned
@@ -180,6 +214,8 @@ export function cleanHtml(html: string): CleanedHtml {
     plaintext,
     links,
     cleanHtml,
+    blocks,
+    structuredText,
   };
 }
 

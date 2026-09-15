@@ -9,6 +9,20 @@ export function isValidCompanyCandidate(value?: string | null): boolean {
   return Boolean(normalized && normalized.length <= 80 && !GENERIC_COMPANY_NAMES.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 8 && !/\b(?:thank you|we have|your application|this email|please|would like|has been|was received|with the|applying to)\b/i.test(normalized));
 }
 
+export function scoreCandidate(value: string | undefined, kind: "company" | "role" | "location"): number {
+  const normalized = normalizeExtractedValue(value);
+  if (!normalized) return 0;
+  if (kind === "company" && !isValidCompanyCandidate(normalized)) return 0;
+  if (kind === "role" && !isValidRoleCandidate(normalized)) return 0;
+  if (kind === "location" && (normalized.length > 80 || /[.!?]/.test(normalized))) return 0;
+  let score = 0.35;
+  if (normalized.split(/\s+/).length <= 5) score += 0.12;
+  if (/[A-Z]/.test(normalized)) score += 0.08;
+  if (kind === "role" && /\b(?:developer|engineer|designer|analyst|manager|intern|specialist|lead|architect|scientist)\b/i.test(normalized)) score += 0.25;
+  if (kind === "location" && /\b(?:remote|hybrid|onsite|[A-Z]{2,})\b/i.test(normalized)) score += 0.12;
+  return Math.min(score, 0.95);
+}
+
 export function isValidRoleCandidate(value?: string | null): boolean {
   const normalized = normalizeExtractedValue(value);
   return Boolean(normalized && normalized.length >= 3 && normalized.length <= 100 && !GENERIC_ROLE_TEXT.test(normalized) && !ACTION_ROLE_TEXT.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 9 && !/\b(?:view job|apply with resume|more success|your update|notification emails?|application received|thank you|we have)\b/i.test(normalized));
@@ -33,7 +47,7 @@ function cleanCompanyCandidate(value?: string): string | undefined {
 }
 
 export function normalizeExtractedValue(value?: string | null): string | undefined {
-  const normalized = value?.replace(/\s+/g, " ").replace(/[|•]+/g, " ").trim();
+  const normalized = value?.replace(/<!--[\s\S]*?-->/g, " ").replace(/<[^>]+>/g, " ").replace(/https?:\/\/\S+/gi, " ").replace(/\s+/g, " ").replace(/[|•]+/g, " ").trim();
   if (!normalized || PLACEHOLDERS.test(normalized)) return undefined;
   return normalized.replace(/^[:\-–—]+|[:\-–—]+$/g, "").trim() || undefined;
 }
