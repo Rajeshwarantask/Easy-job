@@ -18,6 +18,14 @@ export interface Evidence {
   independentGroup: string;
 }
 
+export interface ExtractionSignals {
+  applicationIds: string[];
+  urls: string[];
+  workModes: string[];
+  compensation: string[];
+  dateContext: string[];
+}
+
 export interface CandidateEvidence {
   field: CandidateField;
   value: string;
@@ -62,6 +70,16 @@ function add(list: CandidateEvidence[], field: CandidateField, value: string | u
   list.push({ field, value: cleaned, source, pattern, evidence, positiveScore, negativeScore, confidence, semanticType, evidenceItems: [item], independentGroups: [item.independentGroup], rejected: !valid || negativeScore >= positiveScore });
 }
 
+export function extractContextSignals(subject: string, body: string): ExtractionSignals {
+  const text = `${subject}\n${body}`;
+  const urls = [...text.matchAll(/https?:\/\/[^\s<>"')]+/gi)].map((match) => match[0].replace(/[.,;:]+$/, "")).filter((url) => !/unsubscribe|privacy|manage-preferences|tracking|pixel/i.test(url));
+  const applicationIds = [...text.matchAll(/\b(?:application|requisition|candidate|job|reference|req(?:uisition)?)\s*(?:id|number|no\.?|#)\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{3,})\b/gi)].map((match) => match[1]);
+  const workModes = [...text.matchAll(/\b(remote|hybrid|on[- ]?site|onsite|work from home|in office)\b/gi)].map((match) => match[1].toLowerCase());
+  const compensation = [...text.matchAll(/(?:[$€£₹]\s?\d[\d,]*(?:\.\d+)?\s?(?:k|m|lpa|lakhs?)?(?:\s?[-–]\s?[$€£₹]?\s?\d[\d,]*(?:\.\d+)?\s?(?:k|m|lpa|lakhs?)?)?|\b\d[\d,]*(?:\.\d+)?\s?(?:k|lpa|lakhs?|per annum|annually)\b)/gi)].map((match) => match[0]);
+  const dateContext = [...text.matchAll(/\b(?:interview|assessment|start|joining|application|response|decision|deadline|due)\w*[^\n.!?]{0,70}\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b[^\n.!?]{0,30}/gi)].map((match) => match[0].trim());
+  return { applicationIds: [...new Set(applicationIds)], urls: [...new Set(urls)], workModes: [...new Set(workModes)], compensation: [...new Set(compensation)], dateContext: [...new Set(dateContext)] };
+}
+
 function generateSemanticCandidates(text: string, candidates: CandidateEvidence[]) {
   const document = nlp(text);
   const entities: Array<{ field: CandidateField; type: SemanticEntity; values: string[]; score: number }> = [
@@ -87,8 +105,14 @@ export function extractCandidates(subject: string, body: string, sender?: string
   const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const explicitCompany = /(?:company|employer|organization|hiring company)\s*[:\-]?\s*([^\n]+?)(?=\s+(?:for|as|on|and|through)\b|[\n]|$)/gi;
   for (const match of text.matchAll(explicitCompany)) add(candidates, "company", match[1], "pattern", "explicit-company", match[0], 0.88);
-  const explicitRole = /(?:job title|position applied|position|role|job)\s*[:\-]\s*([^\n|;,]+)/gi;
+  const labeledLocation = /(?:location|based in|work location|office location|job location)\s*[:\-]?\s*([^\n|;,]+)/gi;
+  for (const match of text.matchAll(labeledLocation)) add(candidates, "location", match[1], "pattern", "explicit-location", match[0], 0.86);
+  const atCompany = /\b(?:at|with)\s+([A-Z][A-Za-z0-9&.' -]{2,80})(?=\s+(?:as|for|on)\b|[,.;\n]|$)/g;
+  for (const match of text.matchAll(atCompany)) add(candidates, "company", match[1], "pattern", "company-relation", match[0], 0.78);
+  const explicitRole = /(?:job title|position applied|position|role|job|opening|vacancy|opportunity)\s*[:\-]\s*([^\n|;,]+)/gi;
   for (const match of text.matchAll(explicitRole)) add(candidates, "role", match[1], "pattern", "explicit-role", match[0], 0.9);
+  const roleContext = /(?:interview|assessment|application|opportunity|opening)\s+(?:for|about|regarding)\s+(?:the\s+)?([^\n,.;]{3,90}?)(?=\s+(?:role|position|job|at|with)\b|[,.;\n]|$)/gi;
+  for (const match of text.matchAll(roleContext)) add(candidates, "role", match[1], "pattern", "role-context", match[0], 0.78);
   const applicationRole = /(?:application|applying|applied)\s+(?:for|to)\s+(?:the\s+)?(.+?)(?=\s+(?:at|with|through)\b|[,.;\n]|$)/gi;
   for (const match of text.matchAll(applicationRole)) add(candidates, "role", match[1], "pattern", "application-role", match[0], 0.82);
   for (let i = 0; i < lines.length; i++) {
@@ -97,7 +121,7 @@ export function extractCandidates(subject: string, body: string, sender?: string
     if (ROLE_WORDS.test(line) && line.length <= 100) add(candidates, "role", line, i === 0 ? "subject" : "heading", "role-shaped-line", line, i === 0 ? 0.84 : 0.78);
     if (next && ROLE_WORDS.test(line) && !ROLE_WORDS.test(next) && next.length <= 90) add(candidates, "company", next, "paragraph", "adjacent-role-company", `${line}\n${next}`, 0.86);
     if (next && /^(?:at|with)\s+/i.test(next) && ROLE_WORDS.test(line)) add(candidates, "company", next.replace(/^(?:at|with)\s+/i, ""), "paragraph", "role-at-company", `${line}\n${next}`, 0.9);
-    const location = line.match(/\b(?:Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Kolkata|Gurugram|Noida|Remote|Hybrid|Onsite)(?:\s+[A-Z][a-z]+)?\b/);
+    const location = line.match(/\b(?:Bengaluru|Bangalore|Chennai|Hyderabad|Mumbai|Delhi|Pune|Kolkata|Gurugram|Noida|Ahmedabad|Jaipur|Kochi|Singapore|London|New York|San Francisco|Remote|Hybrid|On[- ]?site|Work from home)(?:\s+[A-Z][a-z]+)?\b/i);
     if (location) add(candidates, "location", location[0], "paragraph", "location-shaped-line", line, 0.72);
   }
   generateSemanticCandidates(text, candidates);
