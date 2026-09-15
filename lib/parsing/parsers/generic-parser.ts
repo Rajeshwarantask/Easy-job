@@ -268,7 +268,7 @@ export class GenericParser implements PlatformParser {
       atsFields: { requisitionId },
       rawPatternMatches: Object.fromEntries(extractionSources.map((source) => [source, source])),
       processingNotes: extractionSources,
-      candidateEvidence: [...candidateResolution.candidates, ...contextual.candidates].map(({ field, value, source, pattern, evidence, confidence, rejected }) => ({ field, value, source, pattern, evidence, confidence, rejected })),
+      candidateEvidence: [...candidateResolution.candidates, ...contextual.candidates].map(({ field, value, source, pattern, evidence, confidence, rejected, evidenceItems, independentGroups }) => ({ field, value, source, pattern, evidence, confidence, rejected, evidenceItems, independentGroups })),
       jobUrl,
       careerPortalUrl,
       parserConfidence,

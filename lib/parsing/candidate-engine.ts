@@ -2,8 +2,21 @@ import nlp from "compromise";
 import { isValidCompanyCandidate, isValidRoleCandidate, normalizeExtractedValue } from "./deterministic-fallbacks.ts";
 
 export type CandidateField = "company" | "role" | "location" | "person";
-export type CandidateSource = "subject" | "heading" | "table" | "paragraph" | "link" | "sender" | "platform-template" | "pattern" | "semantic-nlp" | "generic";
+export type CandidateSource = "subject" | "heading" | "table" | "paragraph" | "link" | "sender" | "platform-template" | "pattern" | "semantic-nlp" | "contextual" | "generic";
 export type SemanticEntity = "JOB_TITLE" | "COMPANY" | "LOCATION" | "PERSON" | "ORGANIZATION" | "TECHNOLOGY";
+
+export type EvidenceType = "SUBJECT" | "BODY_RELATIONSHIP" | "STRUCTURAL_HTML" | "SENDER" | "DOMAIN" | "LINK" | "SEMANTIC" | "KEYWORD_CONTEXT" | "GRAMMATICAL_RELATION" | "POSITIONAL" | "REPETITION" | "THREAD_CONTEXT" | "TIMELINE_CONTEXT" | "NEGATIVE" | "SECONDARY_CONTENT";
+
+export interface Evidence {
+  type: EvidenceType;
+  signal: string;
+  strength: number;
+  reliability: number;
+  source: string;
+  location?: string;
+  polarity: "support" | "contradict";
+  independentGroup: string;
+}
 
 export interface CandidateEvidence {
   field: CandidateField;
@@ -15,6 +28,8 @@ export interface CandidateEvidence {
   negativeScore: number;
   confidence: number;
   semanticType?: SemanticEntity;
+  evidenceItems?: Evidence[];
+  independentGroups?: string[];
   rejected?: boolean;
 }
 
@@ -28,12 +43,23 @@ function clean(value?: string) {
   return normalizeExtractedValue(value)?.replace(/\s+(?:view job|apply with resume|apply now|learn more)\b.*$/i, "").trim();
 }
 
+function evidenceFor(source: CandidateSource, pattern: string, signal: string, strength: number): Evidence {
+  const subject = source === "subject";
+  const semantic = source === "semantic-nlp";
+  const sender = source === "sender";
+  const type: EvidenceType = subject ? "SUBJECT" : semantic ? "SEMANTIC" : sender ? "SENDER" : source === "heading" || source === "table" ? "STRUCTURAL_HTML" : pattern.includes("relation") || pattern.includes("context") ? "BODY_RELATIONSHIP" : "KEYWORD_CONTEXT";
+  const independentGroup = subject ? "document-subject" : semantic ? "semantic-model" : sender ? "message-header" : source === "heading" || source === "table" ? "document-structure" : "body-context";
+  return { type, signal, strength, reliability: subject ? 0.95 : semantic ? 0.78 : sender ? 0.55 : 0.68, source, polarity: "support", independentGroup };
+}
+
 function add(list: CandidateEvidence[], field: CandidateField, value: string | undefined, source: CandidateSource, pattern: string, evidence: string, positiveScore: number, semanticType?: SemanticEntity) {
   const cleaned = clean(value)?.replace(/^(?:application(?: submitted| received)?|your application)\s+(?:to|from)\s+/i, "").replace(/\s+\.$/, "").trim();
   if (!cleaned) return;
   const negativeScore = (PLATFORM_NAMES.test(cleaned) ? 0.95 : 0) + (CTA.test(cleaned) ? 0.95 : 0) + (FOOTER.test(cleaned) ? 0.95 : 0) + (SENTENCE.test(cleaned) ? 0.75 : 0) + (/^\p{Lu}[\p{Ll}]+,\s+\p{Lu}/u.test(cleaned) ? 0.9 : 0) + (field === "role" && !ROLE_WORDS.test(cleaned) && cleaned.split(/\s+/).length > 5 ? 0.45 : 0);
-  const valid = field === "company" ? isValidCompanyCandidate(cleaned) : field === "role" ? isValidRoleCandidate(cleaned) : cleaned.length <= 70 && !FOOTER.test(cleaned);
-  list.push({ field, value: cleaned, source, pattern, evidence, positiveScore, negativeScore, confidence: Math.max(0, Math.min(0.98, positiveScore - negativeScore)), semanticType, rejected: !valid || negativeScore >= positiveScore });
+  const valid = field === "company" ? isValidCompanyCandidate(cleaned) : field === "role" ? isValidRoleCandidate(cleaned) : field === "location" ? cleaned.length <= 70 && !FOOTER.test(cleaned) : cleaned.length <= 70 && !FOOTER.test(cleaned);
+  const item = evidenceFor(source, pattern, evidence, positiveScore);
+  const confidence = Math.max(0, Math.min(0.98, positiveScore - negativeScore));
+  list.push({ field, value: cleaned, source, pattern, evidence, positiveScore, negativeScore, confidence, semanticType, evidenceItems: [item], independentGroups: [item.independentGroup], rejected: !valid || negativeScore >= positiveScore });
 }
 
 function generateSemanticCandidates(text: string, candidates: CandidateEvidence[]) {
@@ -83,8 +109,25 @@ export function extractCandidates(subject: string, body: string, sender?: string
 export function selectCandidates(candidates: CandidateEvidence[]) {
   const selected = {} as Partial<Record<CandidateField, CandidateEvidence>>;
   for (const field of ["company", "role", "location", "person"] as CandidateField[]) {
-    const ranked = candidates.filter((candidate) => candidate.field === field && !candidate.rejected).sort((a, b) => b.confidence - a.confidence || b.positiveScore - a.positiveScore);
-    if (ranked.length && (ranked.length === 1 || ranked[0].value.toLowerCase() === ranked[1].value.toLowerCase() || ranked[0].confidence - ranked[1].confidence >= 0.08)) selected[field] = ranked[0];
+    const grouped = new Map<string, CandidateEvidence>();
+    for (const candidate of candidates.filter((item) => item.field === field && !item.rejected)) {
+      const key = candidate.value.toLowerCase();
+      const current = grouped.get(key);
+      if (!current) grouped.set(key, { ...candidate });
+      else {
+        current.positiveScore = Math.min(1.2, current.positiveScore + candidate.positiveScore * 0.35);
+        current.negativeScore += candidate.negativeScore * 0.25;
+        current.confidence = Math.max(0, Math.min(0.98, current.positiveScore - current.negativeScore));
+        current.evidenceItems = [...(current.evidenceItems || []), ...(candidate.evidenceItems || [])];
+        current.independentGroups = [...new Set([...(current.independentGroups || []), ...(candidate.independentGroups || [])])];
+      }
+    }
+    const ranked = [...grouped.values()].sort((a, b) => ((b.independentGroups || []).length - (a.independentGroups || []).length) || b.confidence - a.confidence || b.positiveScore - a.positiveScore);
+    if (!ranked.length) continue;
+    const [winner, runnerUp] = ranked;
+    const margin = winner.confidence - (runnerUp?.confidence || 0);
+    const enoughIndependentEvidence = (winner.independentGroups || []).length >= 2 || winner.confidence >= 0.84;
+    if (enoughIndependentEvidence && (!runnerUp || winner.value.toLowerCase() === runnerUp.value.toLowerCase() || margin >= 0.08)) selected[field] = winner;
   }
   return selected;
 }
