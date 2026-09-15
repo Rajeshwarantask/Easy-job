@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { syncGmailEmails } from "@/lib/parsing/sync-orchestrator";
 import { dedupeByGmailMessageId } from "@/lib/parsing/deterministic-fallbacks";
 import type { ParseResult } from "@/lib/parsing/types";
+import { summarizeValidation, validateRawGmailCorpus } from "@/lib/parsing/validation-harness";
 
 const GMAIL_API = "https://www.googleapis.com/gmail/v1/users/me";
 const BASE_RECRUITMENT_QUERY = [
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
     if (!accessToken) return NextResponse.json({ error: "No Gmail access token. Please re-authenticate." }, { status: 401 });
     const body = await request.json().catch(() => ({}));
     const range = (body?.range || {}) as SyncRange;
+    const validationMode = body?.validation === true;
     const diagnostics = { messagesFetched: 0, parsed: 0, skipped: 0, deduplicated: 0, errors: [] as string[] };
     const ids = await fetchAllMessageIds(accessToken, range);
     diagnostics.messagesFetched = ids.length;
@@ -74,6 +76,10 @@ export async function POST(request: Request) {
       try { messages.push(await gmailFetch(`/messages/${encodeURIComponent(item.id)}?format=full`, accessToken)); } catch (error) { diagnostics.errors.push(`${item.id}: ${error instanceof Error ? error.message : String(error)}`); }
     }
     if (messages.length === 0) return NextResponse.json({ processed: 0, applications: [], errors: diagnostics.errors, diagnostics, syncDurationMs: Date.now() - startTime, syncedAt: new Date().toISOString() });
+    if (validationMode) {
+      const records = await validateRawGmailCorpus(messages, { userId: session.user.id, gmailThreadId: messages[0]?.threadId, existingApplications: [] });
+      return NextResponse.json({ mode: "validation", corpus: summarizeValidation(records), records, diagnostics, syncDurationMs: Date.now() - startTime, syncedAt: new Date().toISOString() });
+    }
     const result = await syncGmailEmails(messages, { userId: session.user.id, gmailThreadId: messages[0]?.threadId, existingApplications: [] });
     const successful = result.results.filter((entry: ParseResult) => entry.success && entry.application);
     diagnostics.parsed = successful.length;

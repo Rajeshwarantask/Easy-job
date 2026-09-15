@@ -186,14 +186,12 @@ export class GenericParser implements PlatformParser {
     const platformFields = extractPlatformFields(from, subject, body);
     const fallback = extractDeterministicFallbacks(from, subject, body);
     const candidateResolution = resolveCandidates(subject, body, from);
-    company = (isValidCompanyCandidate(platformFields.company) ? platformFields.company : undefined)
-      || candidateResolution.selected.company?.value
-      || (isValidCompanyCandidate(fallback.company) ? fallback.company : undefined)
-      || (isValidCompanyCandidate(company) ? normalizeExtractedValue(company) : undefined);
-    role = (isValidRoleCandidate(platformFields.role) ? platformFields.role : undefined)
-      || candidateResolution.selected.role?.value
-      || (isValidRoleCandidate(fallback.role) ? fallback.role : undefined)
-      || (isValidRoleCandidate(role) ? normalizeExtractedValue(role) : undefined);
+    company = candidateResolution.selected.company?.value
+      || (isValidCompanyCandidate(platformFields.company) ? platformFields.company : undefined)
+      || (isValidCompanyCandidate(fallback.company) ? fallback.company : undefined);
+    role = candidateResolution.selected.role?.value
+      || (isValidRoleCandidate(platformFields.role) ? platformFields.role : undefined)
+      || (isValidRoleCandidate(fallback.role) ? fallback.role : undefined);
     if (platformFields.location && !location) location = platformFields.location;
     if (location && scoreCandidate(location, "location") < 0.45) location = undefined;
     if (platformFields.requisitionId) requisitionId = platformFields.requisitionId;
