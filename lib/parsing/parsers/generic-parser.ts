@@ -24,6 +24,7 @@ import {
 } from "../field-extractors/interview-link-extractor";
 import { extractSalary } from "../field-extractors/salary-extractor";
 import { classifyRecruitmentEvent, extractDeterministicFallbacks, extractExplicitDate, extractPlatformFields, isValidCompanyCandidate, isValidRoleCandidate, normalizeExtractedValue, scoreCandidate } from "../deterministic-fallbacks";
+import { resolveCandidates } from "../candidate-engine";
 
 export class GenericParser implements PlatformParser {
   platformId = "generic";
@@ -184,10 +185,13 @@ export class GenericParser implements PlatformParser {
     // Deterministic platform rules run before generic heuristics to avoid template garbage.
     const platformFields = extractPlatformFields(from, subject, body);
     const fallback = extractDeterministicFallbacks(from, subject, body);
+    const candidateResolution = resolveCandidates(subject, body, from);
     company = (isValidCompanyCandidate(platformFields.company) ? platformFields.company : undefined)
+      || candidateResolution.selected.company?.value
       || (isValidCompanyCandidate(fallback.company) ? fallback.company : undefined)
       || (isValidCompanyCandidate(company) ? normalizeExtractedValue(company) : undefined);
     role = (isValidRoleCandidate(platformFields.role) ? platformFields.role : undefined)
+      || candidateResolution.selected.role?.value
       || (isValidRoleCandidate(fallback.role) ? fallback.role : undefined)
       || (isValidRoleCandidate(role) ? normalizeExtractedValue(role) : undefined);
     if (platformFields.location && !location) location = platformFields.location;
@@ -251,6 +255,7 @@ export class GenericParser implements PlatformParser {
       atsFields: { requisitionId },
       rawPatternMatches: Object.fromEntries(extractionSources.map((source) => [source, source])),
       processingNotes: extractionSources,
+      candidateEvidence: candidateResolution.candidates.map(({ field, value, source, pattern, evidence, confidence, rejected }) => ({ field, value, source, pattern, evidence, confidence, rejected })),
       jobUrl,
       careerPortalUrl,
       parserConfidence,
