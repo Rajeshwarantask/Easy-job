@@ -46,9 +46,15 @@ const CTA = /\b(?:view job|apply(?: now| with resume)?|view profile|learn more|c
 const FOOTER = /\b(?:unsubscribe|privacy policy|manage preferences|terms|view in browser)\b/i;
 const SENTENCE = /(?:\b(?:was sent to|will review your information|through our career portal|we have received|thank you for applying)\b|[.!?]$)/i;
 const ROLE_WORDS = /\b(?:developer|engineer|designer|analyst|manager|intern|scientist|specialist|lead|architect|consultant|administrator|associate|director)\b/i;
+const HTML_NOISE = /(?:<\/?(?:style|script|html|body|div|span|table|a)\b|\b(?:display|font-size|color|margin|padding)\s*:\s*[^;]+;|\{[^}]*\})/i;
+const PERSON_LIKE = /^\p{Lu}[\p{Ll}]+(?:\s+\p{Lu}[\p{Ll}]+){1,3}$/u;
+const SIGNATURE = /^(?:best|regards|thanks|thank you|sincerely|cheers|sent from|unsubscribe|privacy|view in browser)\b/i;
+const GENERIC_COMPANY_NOISE = /^(?:the hiring team|hiring team|recruiting team|talent acquisition|human resources|careers?|company|employer|organization)$/i;
+const LEGAL_SUFFIX = /,\s*(?:inc\.?|llc|ltd\.?|limited|corp\.?|corporation|plc)$/i;
+const TECHNOLOGY_LIST = /^(?:[A-Za-z+#.]+,\s*){2,}[A-Za-z+#.]+$/;
 
 function clean(value?: string) {
-  return normalizeExtractedValue(value)?.replace(/\s+(?:view job|apply with resume|apply now|learn more)\b.*$/i, "").trim();
+  return normalizeExtractedValue(value)?.replace(/^(?:company|employer|organization|location|role|position|job title)\s*:\s*/i, "").replace(/\s+(?:view job|apply with resume|apply now|learn more)\b.*$/i, "").replace(/\s*\|\s*(?:apply|view|learn more).*$/i, "").trim();
 }
 
 function evidenceFor(source: CandidateSource, pattern: string, signal: string, strength: number): Evidence {
@@ -63,8 +69,8 @@ function evidenceFor(source: CandidateSource, pattern: string, signal: string, s
 function add(list: CandidateEvidence[], field: CandidateField, value: string | undefined, source: CandidateSource, pattern: string, evidence: string, positiveScore: number, semanticType?: SemanticEntity) {
   const cleaned = clean(value)?.replace(/^(?:application(?: submitted| received)?|your application)\s+(?:to|from)\s+/i, "").replace(/\s+\.$/, "").trim();
   if (!cleaned) return;
-  const negativeScore = (PLATFORM_NAMES.test(cleaned) ? 0.95 : 0) + (CTA.test(cleaned) ? 0.95 : 0) + (FOOTER.test(cleaned) ? 0.95 : 0) + (SENTENCE.test(cleaned) ? 0.75 : 0) + (/^\p{Lu}[\p{Ll}]+,\s+\p{Lu}/u.test(cleaned) ? 0.9 : 0) + (field === "role" && !ROLE_WORDS.test(cleaned) && cleaned.split(/\s+/).length > 5 ? 0.45 : 0);
-  const valid = field === "company" ? isValidCompanyCandidate(cleaned) : field === "role" ? isValidRoleCandidate(cleaned) : field === "location" ? cleaned.length <= 70 && !FOOTER.test(cleaned) : cleaned.length <= 70 && !FOOTER.test(cleaned);
+  const negativeScore = (/(?:message was sent|delivery notice|your message)/i.test(evidence) && pattern === "sent-to-company" ? 1.2 : 0) + (PLATFORM_NAMES.test(cleaned) ? 0.95 : 0) + (CTA.test(cleaned) ? 0.95 : 0) + (FOOTER.test(cleaned) ? 0.95 : 0) + (SENTENCE.test(cleaned) ? 0.75 : 0) + (HTML_NOISE.test(cleaned) ? 1.2 : 0) + (TECHNOLOGY_LIST.test(cleaned) && field !== "role" ? 1.2 : 0) + (SIGNATURE.test(cleaned) ? 1.0 : 0) + (PERSON_LIKE.test(cleaned) && !ROLE_WORDS.test(cleaned) && field !== "person" && field !== "company" && field !== "location" ? 0.9 : 0) + (GENERIC_COMPANY_NOISE.test(cleaned) && field === "company" ? 1.0 : 0) + (field === "role" && !ROLE_WORDS.test(cleaned) && cleaned.split(/\s+/).length > 5 ? 0.45 : 0);
+  const valid = !HTML_NOISE.test(cleaned) && !SIGNATURE.test(cleaned) && (field === "company" ? isValidCompanyCandidate(cleaned) : field === "role" ? isValidRoleCandidate(cleaned) : field === "location" ? cleaned.length <= 70 && !FOOTER.test(cleaned) : cleaned.length <= 70 && !FOOTER.test(cleaned));
   const item = evidenceFor(source, pattern, evidence, positiveScore);
   const confidence = Math.max(0, Math.min(0.98, positiveScore - negativeScore));
   list.push({ field, value: cleaned, source, pattern, evidence, positiveScore, negativeScore, confidence, semanticType, evidenceItems: [item], independentGroups: [item.independentGroup], rejected: !valid || negativeScore >= positiveScore });
@@ -109,6 +115,10 @@ export function extractCandidates(subject: string, body: string, sender?: string
   for (const match of text.matchAll(labeledLocation)) add(candidates, "location", match[1], "pattern", "explicit-location", match[0], 0.86);
   const atCompany = /\b(?:at|with)\s+([A-Z][A-Za-z0-9&.' -]{2,80})(?=\s+(?:as|for|on)\b|[,.;\n]|$)/g;
   for (const match of text.matchAll(atCompany)) add(candidates, "company", match[1], "pattern", "company-relation", match[0], 0.78);
+  const sentToCompany = /\b(?:sent|submitted|applied)\s+to\s+([A-Z][A-Za-z0-9&.' ,-]{2,90}?)(?=\.|\n|\s+(?:for|as|through)\b|$)/g;
+  for (const match of text.matchAll(sentToCompany)) if (!/(?:message was sent|delivery notice|your message)/i.test(text)) add(candidates, "company", match[1], "pattern", "sent-to-company", match[0], 0.92);
+  const adjacentCompany = /\b(?:role|position|job)\s*[:\-]?\s*[^\n]+\n\s*([A-Z][A-Za-z0-9&.' -]{2,90})/g;
+  for (const match of text.matchAll(adjacentCompany)) if (!HTML_NOISE.test(match[0])) add(candidates, "company", match[1], "heading", "adjacent-company", match[0], 0.84);
   const explicitRole = /(?:job title|position applied|position|role|job|opening|vacancy|opportunity)\s*[:\-]\s*([^\n|;,]+)/gi;
   for (const match of text.matchAll(explicitRole)) add(candidates, "role", match[1], "pattern", "explicit-role", match[0], 0.9);
   const roleContext = /(?:interview|assessment|application|opportunity|opening)\s+(?:for|about|regarding)\s+(?:the\s+)?([^\n,.;]{3,90}?)(?=\s+(?:role|position|job|at|with)\b|[,.;\n]|$)/gi;
