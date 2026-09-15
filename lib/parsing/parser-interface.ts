@@ -71,7 +71,7 @@ export interface ParserResult {
   rawPatternMatches?: Record<string, string | null>; // Debug: what patterns matched
   processingNotes?: string[]; // Debug: notes about extraction
   candidateEvidence?: Array<{
-    field: "company" | "role" | "location";
+    field: "company" | "role" | "location" | "person";
     value: string;
     source: string;
     pattern: string;
