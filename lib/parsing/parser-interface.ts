@@ -70,6 +70,15 @@ export interface ParserResult {
   parserConfidence: number; // Overall confidence (0-1)
   rawPatternMatches?: Record<string, string | null>; // Debug: what patterns matched
   processingNotes?: string[]; // Debug: notes about extraction
+  candidateEvidence?: Array<{
+    field: "company" | "role" | "location";
+    value: string;
+    source: string;
+    pattern: string;
+    evidence: string;
+    confidence: number;
+    rejected?: boolean;
+  }>;
 }
 
 /**
