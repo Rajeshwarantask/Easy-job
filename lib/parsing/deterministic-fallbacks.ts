@@ -6,7 +6,7 @@ const ACTION_ROLE_TEXT = /^(?:applying|apply|applied|applying to|your|the|with|a
 
 export function isValidCompanyCandidate(value?: string | null): boolean {
   const normalized = normalizeExtractedValue(value);
-  return Boolean(normalized && normalized.length <= 80 && !GENERIC_COMPANY_NAMES.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 8 && !/\b(?:thank you|we have|your application|this email|please|would like|has been|was received|with the|applying to)\b/i.test(normalized));
+  return Boolean(normalized && normalized.length <= 80 && !GENERIC_COMPANY_NAMES.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 8 && !/\b(?:thank you|we have|your application|this email|please|would like|has been|was received|with the|applying to|professional network|building project|notification|browser|view job|apply with resume|match your company)\b/i.test(normalized));
 }
 
 export function scoreCandidate(value: string | undefined, kind: "company" | "role" | "location"): number {
@@ -25,7 +25,7 @@ export function scoreCandidate(value: string | undefined, kind: "company" | "rol
 
 export function isValidRoleCandidate(value?: string | null): boolean {
   const normalized = normalizeExtractedValue(value);
-  return Boolean(normalized && normalized.length >= 3 && normalized.length <= 100 && !GENERIC_ROLE_TEXT.test(normalized) && !ACTION_ROLE_TEXT.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 9 && !/\b(?:view job|apply with resume|more success|your update|notification emails?|application received|thank you|we have)\b/i.test(normalized));
+  return Boolean(normalized && normalized.length >= 3 && normalized.length <= 100 && !GENERIC_ROLE_TEXT.test(normalized) && !ACTION_ROLE_TEXT.test(normalized) && !/[.!?]$/.test(normalized) && normalized.split(/\s+/).length <= 9 && !/\b(?:view job|apply with resume|more success|your update|notification emails?|application received|thank you|we have|professional network|building project|browser|match your company)\b/i.test(normalized) && !/^\p{Lu}[\p{Ll}]+\s+\p{Lu}\s*\(/u.test(normalized));
 }
 
 function cleanRoleCandidate(value?: string): string | undefined {
