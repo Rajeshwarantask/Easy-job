@@ -23,7 +23,7 @@ import {
   hasInterviewSchedulingContent,
 } from "../field-extractors/interview-link-extractor";
 import { extractSalary } from "../field-extractors/salary-extractor";
-import { classifyRecruitmentEvent, extractDeterministicFallbacks, extractExplicitDate, extractPlatformFields, isValidCompanyCandidate, isValidRoleCandidate, normalizeExtractedValue } from "../deterministic-fallbacks";
+import { classifyRecruitmentEvent, extractDeterministicFallbacks, extractExplicitDate, extractPlatformFields, isValidCompanyCandidate, isValidRoleCandidate, normalizeExtractedValue, scoreCandidate } from "../deterministic-fallbacks";
 
 export class GenericParser implements PlatformParser {
   platformId = "generic";
@@ -191,6 +191,7 @@ export class GenericParser implements PlatformParser {
       || (isValidRoleCandidate(fallback.role) ? fallback.role : undefined)
       || (isValidRoleCandidate(role) ? normalizeExtractedValue(role) : undefined);
     if (platformFields.location && !location) location = platformFields.location;
+    if (location && scoreCandidate(location, "location") < 0.45) location = undefined;
     if (platformFields.requisitionId) requisitionId = platformFields.requisitionId;
     const extractionSources = [
       platformFields.companySource && `company:${platformFields.companySource}`,
@@ -200,8 +201,8 @@ export class GenericParser implements PlatformParser {
     ].filter(Boolean) as string[];
     if (!jobUrl) jobUrl = fallback.jobUrl;
     if (!careerPortalUrl) careerPortalUrl = fallback.careerPortalUrl;
-    if (company && companyConfidence === 0) companyConfidence = platformFields.company ? 0.86 : fallback.company ? 0.72 : 0.42;
-    if (role && roleConfidence === 0) roleConfidence = platformFields.role ? 0.86 : fallback.role ? 0.72 : 0.42;
+    if (company && companyConfidence === 0) companyConfidence = Math.max(scoreCandidate(company, "company"), platformFields.company ? 0.86 : fallback.company ? 0.72 : 0.42);
+    if (role && roleConfidence === 0) roleConfidence = Math.max(scoreCandidate(role, "role"), platformFields.role ? 0.86 : fallback.role ? 0.72 : 0.42);
 
     // ─── Calculate Confidence ───
     const fieldsFound = [company, role, location, workMode].filter(Boolean).length;
