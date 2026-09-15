@@ -111,7 +111,9 @@ export async function processSingleEmail(
     // Step 2: HTML Clean
     const htmlStart = Date.now();
     const cleaned = cleanHtml(decoded.body.html);
-    const bodyText = extractBodyText(decoded.body.plaintext, decoded.body.html);
+    const bodyText = [cleaned.structuredText, extractBodyText(decoded.body.plaintext, decoded.body.html)]
+      .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index)
+      .join("\n\n");
     const links = extractAllLinks(bodyText, decoded.body.html);
     steps.push({
       step: "html_clean",
