@@ -25,6 +25,7 @@ import {
 import { extractSalary } from "../field-extractors/salary-extractor";
 import { classifyRecruitmentEvent, extractDeterministicFallbacks, extractExplicitDate, extractPlatformFields, isValidCompanyCandidate, isValidRoleCandidate, normalizeExtractedValue, scoreCandidate } from "../deterministic-fallbacks";
 import { resolveCandidates } from "../candidate-engine";
+import { runContextualFallback } from "../contextual-fallback";
 
 export class GenericParser implements PlatformParser {
   platformId = "generic";
@@ -186,12 +187,26 @@ export class GenericParser implements PlatformParser {
     const platformFields = extractPlatformFields(from, subject, body);
     const fallback = extractDeterministicFallbacks(from, subject, body);
     const candidateResolution = resolveCandidates(subject, body, from);
+    const contextual = runContextualFallback({ subject, body, sender: from, existingCandidates: candidateResolution.candidates }, Math.max(candidateResolution.selected.company?.confidence || 0, candidateResolution.selected.role?.confidence || 0));
+    const acceptedContextual = contextual.candidates.filter((candidate) => !candidate.rejected && candidate.confidence >= 0.6);
+    const bestContextual = (field: "company" | "role" | "location") => acceptedContextual
+      .filter((candidate) => candidate.field === field)
+      .sort((a, b) => b.confidence - a.confidence)[0];
+    const contextualCompany = bestContextual("company");
+    const contextualRole = bestContextual("role");
+    const contextualLocation = bestContextual("location");
     company = candidateResolution.selected.company?.value
+      || contextualCompany?.value
       || (isValidCompanyCandidate(platformFields.company) ? platformFields.company : undefined)
       || (isValidCompanyCandidate(fallback.company) ? fallback.company : undefined);
     role = candidateResolution.selected.role?.value
+      || contextualRole?.value
       || (isValidRoleCandidate(platformFields.role) ? platformFields.role : undefined)
       || (isValidRoleCandidate(fallback.role) ? fallback.role : undefined);
+    if (!location && contextualLocation) {
+      location = contextualLocation.value;
+      locationConfidence = contextualLocation.confidence;
+    }
     if (platformFields.location && !location) location = platformFields.location;
     if (location && scoreCandidate(location, "location") < 0.45) location = undefined;
     if (platformFields.requisitionId) requisitionId = platformFields.requisitionId;
@@ -253,7 +268,7 @@ export class GenericParser implements PlatformParser {
       atsFields: { requisitionId },
       rawPatternMatches: Object.fromEntries(extractionSources.map((source) => [source, source])),
       processingNotes: extractionSources,
-      candidateEvidence: candidateResolution.candidates.map(({ field, value, source, pattern, evidence, confidence, rejected }) => ({ field, value, source, pattern, evidence, confidence, rejected })),
+      candidateEvidence: [...candidateResolution.candidates, ...contextual.candidates].map(({ field, value, source, pattern, evidence, confidence, rejected }) => ({ field, value, source, pattern, evidence, confidence, rejected })),
       jobUrl,
       careerPortalUrl,
       parserConfidence,
